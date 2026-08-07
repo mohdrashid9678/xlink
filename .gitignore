@@ -1,0 +1,34 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+*.out
+
+# Environment Variables
+.env
+.env.local
+
+# IDE / Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log
+
+# Node & Next.js
+node_modules/
+.next/
+out/
+build/
+.docusaurus/
+.turbo/
+
+# Next.js local env files
+.env*.local
