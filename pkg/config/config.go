@@ -20,9 +20,8 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		Port:      getEnv("PORT", "8080"),
-		DBUrl:     getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/ticketrush?sslmode=disable"), // The default is not good at all, we will change it later
-		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
+		Port:  getEnv("PORT", "8080"),
+		DBUrl: getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
 	}
 }
 
