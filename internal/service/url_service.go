@@ -1,0 +1,138 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/mohdrashid9678/xlink/internal/models"
+	"github.com/mohdrashid9678/xlink/internal/repository"
+)
+
+type URLService interface {
+	Create(ctx context.Context, input models.CreateURLRequest) (*models.URL, error)
+	Get(ctx context.Context, shortCode string) (*models.URL, error)
+	Update(ctx context.Context, shortCode string, input models.UpdateURLRequest) (*models.URL, error)
+	Delete(ctx context.Context, shortCode string) error
+	IncrementClickCount(ctx context.Context, shortCode string) error
+}
+
+type DefaultURLService struct {
+	repository repository.URLRepository
+}
+
+func NewURLService(repository repository.URLRepository) *DefaultURLService {
+	return &DefaultURLService{repository: repository}
+}
+
+func (s *DefaultURLService) Create(ctx context.Context, input models.CreateURLRequest) (*models.URL, error) {
+	longURL, err := validateLongURL(input.LongURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateExpiry(input.ExpiresAt); err != nil {
+		return nil, err
+	}
+
+	var customAlias *string
+	if input.CustomAlias != nil {
+		alias, err := validateShortCode(*input.CustomAlias)
+		if err != nil {
+			return nil, err
+		}
+		customAlias = &alias
+	}
+
+	attempts := 1
+	if customAlias == nil {
+		attempts = 3
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		shortCode := ""
+		if customAlias != nil {
+			shortCode = *customAlias
+		} else {
+			shortCode, err = generateShortCode()
+			if err != nil {
+				return nil, fmt.Errorf("generate short code: %w", err)
+			}
+		}
+
+		created, err := s.repository.Create(ctx, &models.URL{
+			ID:          uuid.New(),
+			ShortCode:   shortCode,
+			LongURL:     longURL,
+			CustomAlias: customAlias,
+			ExpiresAt:   input.ExpiresAt,
+		})
+		if err == nil {
+			return created, nil
+		}
+		if errors.Is(err, repository.ErrConflict) {
+			if customAlias != nil {
+				return nil, ErrConflict
+			}
+			continue
+		}
+		return nil, err
+	}
+	return nil, fmt.Errorf("generate a unique short code after %d attempts: %w", attempts, ErrConflict)
+}
+
+func (s *DefaultURLService) Get(ctx context.Context, shortCode string) (*models.URL, error) {
+	shortCode, err := validateShortCode(shortCode)
+	if err != nil {
+		return nil, err
+	}
+	url, err := s.repository.GetByShortCode(ctx, shortCode)
+	return url, mapRepositoryError(err)
+}
+
+func (s *DefaultURLService) Update(ctx context.Context, shortCode string, input models.UpdateURLRequest) (*models.URL, error) {
+	shortCode, err := validateShortCode(shortCode)
+	if err != nil {
+		return nil, err
+	}
+	if !input.HasUpdates() {
+		return nil, fmt.Errorf("at least one editable field is required: %w", ErrValidation)
+	}
+	if input.LongURL != nil {
+		value, err := validateLongURL(*input.LongURL)
+		if err != nil {
+			return nil, err
+		}
+		input.LongURL = &value
+	}
+	if input.CustomAlias != nil {
+		value, err := validateShortCode(*input.CustomAlias)
+		if err != nil {
+			return nil, err
+		}
+		input.CustomAlias = &value
+	}
+	if err := validateExpiry(input.ExpiresAt); err != nil {
+		return nil, err
+	}
+
+	updated, err := s.repository.Update(ctx, shortCode, input)
+	return updated, mapRepositoryError(err)
+}
+
+func (s *DefaultURLService) Delete(ctx context.Context, shortCode string) error {
+	shortCode, err := validateShortCode(shortCode)
+	if err != nil {
+		return err
+	}
+	return mapRepositoryError(s.repository.Delete(ctx, shortCode))
+}
+
+// IncrementClickCount is intentionally separate from Update. Call it from a
+// redirect handler or analytics workflow; it is not exposed as a client patch field.
+func (s *DefaultURLService) IncrementClickCount(ctx context.Context, shortCode string) error {
+	shortCode, err := validateShortCode(shortCode)
+	if err != nil {
+		return err
+	}
+	return mapRepositoryError(s.repository.IncrementClickCount(ctx, shortCode))
+}
