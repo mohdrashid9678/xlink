@@ -2,34 +2,33 @@ package main
 
 import (
 	"log"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mohdrashid9678/xlink/internal/database"
+	"github.com/mohdrashid9678/xlink/internal/handlers"
+	"github.com/mohdrashid9678/xlink/internal/repository"
+	"github.com/mohdrashid9678/xlink/internal/routes"
+	"github.com/mohdrashid9678/xlink/internal/service"
+	"github.com/mohdrashid9678/xlink/pkg/config"
 )
 
 func main() {
-	// Create a Gin router with default middleware (logger and recovery)
 	r := gin.Default()
 
-	// Load Config
-	// cfg := config.LoadConfig()
+	cfg := config.LoadConfig()
+	db, err := database.NewPostgres(cfg.DBUrl)
+	if err != nil {
+		log.Fatalf("Database connection failed: %v", err)
+	}
+	defer db.Close()
 
-	// Database Connection
-	// dbService, err := database.NewPostgres(cfg.DBUrl)
-	// if err != nil {
-	// 	log.Fatalf("Database connection failed: %v", err)
-	// }
-	// defer dbService.Close()
-
-	r.GET("/ping", func(c *gin.Context) {
-		// Return JSON response
-		c.JSON(http.StatusOK, gin.H{
-			"message": "pong",
-		})
-	})
+	urlRepository := repository.NewPostgresURLRepository(db.Pool)
+	urlService := service.NewURLService(urlRepository)
+	urlHandler := handlers.NewURLHandler(urlService)
+	routes.RegisterRoutes(r, urlHandler)
 
 	// Start server on port 8080 (default)
-	if err := r.Run(); err != nil {
+	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("failed to run server: %v", err)
 	}
 
