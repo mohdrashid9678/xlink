@@ -39,6 +39,19 @@ func (h *URLHandler) Get(c *gin.Context) {
 		return
 	}
 	writeSuccess(c, http.StatusOK, url)
+}
+
+// Redirect sends visitors from a public short code to its destination. The
+// management API's Get handler intentionally remains a non-counted read.
+func (h *URLHandler) Redirect(c *gin.Context) {
+	shortCode := c.Param("shortCode")
+	url, err := h.service.Get(c.Request.Context(), shortCode)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+
+	c.Redirect(http.StatusFound, url.LongURL)
 	h.trackClickAsync(shortCode)
 }
 

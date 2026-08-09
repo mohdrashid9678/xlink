@@ -13,6 +13,7 @@ Start PostgreSQL, create a `.env` with `DB_URL`, apply the initial schema with
 | `GET`    | `/api/v1/urls/:shortCode` | Retrieve one short URL |
 | `PATCH`  | `/api/v1/urls/:shortCode` | Update approved fields |
 | `DELETE` | `/api/v1/urls/:shortCode` | Delete a short URL     |
+| `GET`    | `/:shortCode`              | Redirect visitor (`302 Found`) |
 
 Example create request:
 
