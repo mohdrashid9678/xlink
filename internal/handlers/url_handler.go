@@ -32,12 +32,14 @@ func (h *URLHandler) Create(c *gin.Context) {
 }
 
 func (h *URLHandler) Get(c *gin.Context) {
-	url, err := h.service.Get(c.Request.Context(), c.Param("shortCode"))
+	shortCode := c.Param("shortCode")
+	url, err := h.service.Get(c.Request.Context(), shortCode)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
 	writeSuccess(c, http.StatusOK, url)
+	h.trackClickAsync(shortCode)
 }
 
 func (h *URLHandler) Update(c *gin.Context) {
