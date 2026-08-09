@@ -98,3 +98,16 @@ func TestUpdateRequiresAnEditableField(t *testing.T) {
 		t.Fatalf("expected validation error, got %v", err)
 	}
 }
+
+func TestIncrementClickCountMapsMissingURLToNotFound(t *testing.T) {
+	svc := NewURLService(stubURLRepository{
+		incr: func(context.Context, string) error {
+			return repository.ErrNotFound
+		},
+	})
+
+	err := svc.IncrementClickCount(context.Background(), "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
