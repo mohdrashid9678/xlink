@@ -1,6 +1,9 @@
 package service
 
 import (
+	"crypto/md5"
+	"encoding/binary"
+
 	"github.com/google/uuid"
 )
 
@@ -8,11 +11,6 @@ const (
 	shortCodeLength   = 7
 	shortCodeAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	base62            = uint64(len(shortCodeAlphabet))
-
-	// FNV-1a is a fast, non-cryptographic hash suitable for distributing a
-	// randomly generated UUID over the short-code key space.
-	fnvOffsetBasis64 = uint64(14695981039346656037)
-	fnvPrime64       = uint64(1099511628211)
 )
 
 func generateShortCode(id uuid.UUID, attempt uint64) string {
@@ -20,20 +18,14 @@ func generateShortCode(id uuid.UUID, attempt uint64) string {
 }
 
 func hashUUID(id uuid.UUID, attempt uint64) uint64 {
-	hash := fnvOffsetBasis64
-	for _, value := range id {
-		hash ^= uint64(value)
-		hash *= fnvPrime64
-	}
+	// MD5 is used as a fast standard-library distribution function, not as a
+	// security primitive. UUID randomness provides the code input entropy.
+	var input [24]byte
+	copy(input[:16], id[:])
+	binary.BigEndian.PutUint64(input[16:], attempt)
 
-	// The retry attempt gives each collision retry a different deterministic code.
-	for range 8 {
-		hash ^= attempt & 0xff
-		hash *= fnvPrime64
-		attempt >>= 8
-	}
-
-	return hash
+	sum := md5.Sum(input[:])
+	return binary.BigEndian.Uint64(sum[:8])
 }
 
 func encodeBase62(value uint64) string {
