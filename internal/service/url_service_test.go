@@ -77,6 +77,35 @@ func TestCreateUsesCustomAliasAsShortCode(t *testing.T) {
 	}
 }
 
+func TestCreateRetriesWithDifferentHashBasedShortCode(t *testing.T) {
+	var shortCodes []string
+	svc := NewURLService(stubURLRepository{
+		create: func(_ context.Context, url *models.URL) (*models.URL, error) {
+			shortCodes = append(shortCodes, url.ShortCode)
+			if len(shortCodes) == 1 {
+				return nil, repository.ErrConflict
+			}
+			return url, nil
+		},
+	})
+
+	_, err := svc.Create(context.Background(), models.CreateURLRequest{LongURL: "https://example.com"})
+	if err != nil {
+		t.Fatalf("Create returned an error: %v", err)
+	}
+	if len(shortCodes) != 2 {
+		t.Fatalf("expected two create attempts, got %d", len(shortCodes))
+	}
+	if shortCodes[0] == shortCodes[1] {
+		t.Fatalf("expected a different short code after collision, got %q", shortCodes[0])
+	}
+	for _, shortCode := range shortCodes {
+		if len(shortCode) != shortCodeLength {
+			t.Errorf("short code %q has length %d, want %d", shortCode, len(shortCode), shortCodeLength)
+		}
+	}
+}
+
 func TestGetMapsMissingURLToNotFound(t *testing.T) {
 	svc := NewURLService(stubURLRepository{
 		get: func(context.Context, string) (*models.URL, error) {

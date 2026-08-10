@@ -48,19 +48,17 @@ func (s *DefaultURLService) Create(ctx context.Context, input models.CreateURLRe
 	if customAlias == nil {
 		attempts = 3
 	}
+	id := uuid.New()
 	for attempt := 0; attempt < attempts; attempt++ {
 		shortCode := ""
 		if customAlias != nil {
 			shortCode = *customAlias
 		} else {
-			shortCode, err = generateShortCode()
-			if err != nil {
-				return nil, fmt.Errorf("generate short code: %w", err)
-			}
+			shortCode = generateShortCode(id, uint64(attempt))
 		}
 
 		created, err := s.repository.Create(ctx, &models.URL{
-			ID:          uuid.New(),
+			ID:          id,
 			ShortCode:   shortCode,
 			LongURL:     longURL,
 			CustomAlias: customAlias,
