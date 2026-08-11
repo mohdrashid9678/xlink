@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mohdrashid9678/xlink/internal/middleware"
 	"github.com/mohdrashid9678/xlink/internal/models"
 	"github.com/mohdrashid9678/xlink/internal/service"
 )
@@ -17,13 +18,18 @@ func NewURLHandler(service service.URLService) *URLHandler {
 }
 
 func (h *URLHandler) Create(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "unauthorized", "A valid access token is required.")
+		return
+	}
 	var request models.CreateURLRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "Request body must be valid JSON.")
 		return
 	}
 
-	url, err := h.service.Create(c.Request.Context(), request)
+	url, err := h.service.Create(c.Request.Context(), userID, request)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -32,8 +38,13 @@ func (h *URLHandler) Create(c *gin.Context) {
 }
 
 func (h *URLHandler) Get(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "unauthorized", "A valid access token is required.")
+		return
+	}
 	shortCode := c.Param("shortCode")
-	url, err := h.service.Get(c.Request.Context(), shortCode)
+	url, err := h.service.Get(c.Request.Context(), userID, shortCode)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -45,7 +56,7 @@ func (h *URLHandler) Get(c *gin.Context) {
 // management API's Get handler intentionally remains a non-counted read.
 func (h *URLHandler) Redirect(c *gin.Context) {
 	shortCode := c.Param("shortCode")
-	url, err := h.service.Get(c.Request.Context(), shortCode)
+	url, err := h.service.GetPublic(c.Request.Context(), shortCode)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -56,13 +67,18 @@ func (h *URLHandler) Redirect(c *gin.Context) {
 }
 
 func (h *URLHandler) Update(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "unauthorized", "A valid access token is required.")
+		return
+	}
 	var request models.UpdateURLRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "Request body must be valid JSON.")
 		return
 	}
 
-	url, err := h.service.Update(c.Request.Context(), c.Param("shortCode"), request)
+	url, err := h.service.Update(c.Request.Context(), userID, c.Param("shortCode"), request)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -71,7 +87,12 @@ func (h *URLHandler) Update(c *gin.Context) {
 }
 
 func (h *URLHandler) Delete(c *gin.Context) {
-	if err := h.service.Delete(c.Request.Context(), c.Param("shortCode")); err != nil {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "unauthorized", "A valid access token is required.")
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), userID, c.Param("shortCode")); err != nil {
 		writeServiceError(c, err)
 		return
 	}

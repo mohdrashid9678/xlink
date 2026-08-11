@@ -7,6 +7,10 @@ A highly available and efficient URL shortener.
 Start PostgreSQL, create a `.env` with `DB_URL`, apply the initial schema with
 `make db-init`, then start the API with `make run`.
 
+Authentication requires `AUTH_JWT_SECRET` (at least 32 bytes) in `.env`.
+Login and refresh responses return JSON `access_token` and `refresh_token`
+values; clients must store refresh tokens securely.
+
 | Method   | Path                      | Purpose                |
 | -------- | ------------------------- | ---------------------- |
 | `POST`   | `/api/v1/urls`            | Create a short URL     |

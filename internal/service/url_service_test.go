@@ -13,9 +13,10 @@ import (
 
 type stubURLRepository struct {
 	create func(context.Context, *models.URL) (*models.URL, error)
-	get    func(context.Context, string) (*models.URL, error)
-	update func(context.Context, string, models.UpdateURLRequest) (*models.URL, error)
-	delete func(context.Context, string) error
+	get    func(context.Context, uuid.UUID, string) (*models.URL, error)
+	public func(context.Context, string) (*models.URL, error)
+	update func(context.Context, uuid.UUID, string, models.UpdateURLRequest) (*models.URL, error)
+	delete func(context.Context, uuid.UUID, string) error
 	incr   func(context.Context, string) error
 }
 
@@ -23,16 +24,20 @@ func (r stubURLRepository) Create(ctx context.Context, url *models.URL) (*models
 	return r.create(ctx, url)
 }
 
-func (r stubURLRepository) GetByShortCode(ctx context.Context, shortCode string) (*models.URL, error) {
-	return r.get(ctx, shortCode)
+func (r stubURLRepository) GetByShortCode(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error) {
+	return r.get(ctx, userID, shortCode)
 }
 
-func (r stubURLRepository) Update(ctx context.Context, shortCode string, update models.UpdateURLRequest) (*models.URL, error) {
-	return r.update(ctx, shortCode, update)
+func (r stubURLRepository) GetPublicByShortCode(ctx context.Context, shortCode string) (*models.URL, error) {
+	return r.public(ctx, shortCode)
 }
 
-func (r stubURLRepository) Delete(ctx context.Context, shortCode string) error {
-	return r.delete(ctx, shortCode)
+func (r stubURLRepository) Update(ctx context.Context, userID uuid.UUID, shortCode string, update models.UpdateURLRequest) (*models.URL, error) {
+	return r.update(ctx, userID, shortCode, update)
+}
+
+func (r stubURLRepository) Delete(ctx context.Context, userID uuid.UUID, shortCode string) error {
+	return r.delete(ctx, userID, shortCode)
 }
 
 func (r stubURLRepository) IncrementClickCount(ctx context.Context, shortCode string) error {
@@ -47,7 +52,7 @@ func TestCreateRejectsInvalidURLBeforeRepository(t *testing.T) {
 		},
 	})
 
-	_, err := svc.Create(context.Background(), models.CreateURLRequest{LongURL: "not-a-url"})
+	_, err := svc.Create(context.Background(), uuid.New(), models.CreateURLRequest{LongURL: "not-a-url"})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
 	}
@@ -65,7 +70,7 @@ func TestCreateUsesCustomAliasAsShortCode(t *testing.T) {
 		},
 	})
 
-	created, err := svc.Create(context.Background(), models.CreateURLRequest{
+	created, err := svc.Create(context.Background(), uuid.New(), models.CreateURLRequest{
 		LongURL:     "https://example.com/docs",
 		CustomAlias: &alias,
 	})
@@ -89,7 +94,7 @@ func TestCreateRetriesWithDifferentHashBasedShortCode(t *testing.T) {
 		},
 	})
 
-	_, err := svc.Create(context.Background(), models.CreateURLRequest{LongURL: "https://example.com"})
+	_, err := svc.Create(context.Background(), uuid.New(), models.CreateURLRequest{LongURL: "https://example.com"})
 	if err != nil {
 		t.Fatalf("Create returned an error: %v", err)
 	}
@@ -108,12 +113,12 @@ func TestCreateRetriesWithDifferentHashBasedShortCode(t *testing.T) {
 
 func TestGetMapsMissingURLToNotFound(t *testing.T) {
 	svc := NewURLService(stubURLRepository{
-		get: func(context.Context, string) (*models.URL, error) {
+		get: func(context.Context, uuid.UUID, string) (*models.URL, error) {
 			return nil, repository.ErrNotFound
 		},
 	})
 
-	_, err := svc.Get(context.Background(), "missing")
+	_, err := svc.Get(context.Background(), uuid.New(), "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected not found error, got %v", err)
 	}
@@ -122,7 +127,7 @@ func TestGetMapsMissingURLToNotFound(t *testing.T) {
 func TestUpdateRequiresAnEditableField(t *testing.T) {
 	svc := NewURLService(stubURLRepository{})
 
-	_, err := svc.Update(context.Background(), "example", models.UpdateURLRequest{})
+	_, err := svc.Update(context.Background(), uuid.New(), "example", models.UpdateURLRequest{})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
 	}

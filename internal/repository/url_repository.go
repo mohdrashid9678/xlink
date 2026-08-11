@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mohdrashid9678/xlink/internal/models"
 )
 
 type URLRepository interface {
 	Create(ctx context.Context, url *models.URL) (*models.URL, error)
-	GetByShortCode(ctx context.Context, shortCode string) (*models.URL, error)
-	Update(ctx context.Context, shortCode string, update models.UpdateURLRequest) (*models.URL, error)
-	Delete(ctx context.Context, shortCode string) error
+	GetByShortCode(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error)
+	GetPublicByShortCode(ctx context.Context, shortCode string) (*models.URL, error)
+	Update(ctx context.Context, userID uuid.UUID, shortCode string, update models.UpdateURLRequest) (*models.URL, error)
+	Delete(ctx context.Context, userID uuid.UUID, shortCode string) error
 	IncrementClickCount(ctx context.Context, shortCode string) error
 }
 
@@ -26,24 +28,30 @@ func NewPostgresURLRepository(pool *pgxpool.Pool) *PostgresURLRepository {
 }
 
 func (r *PostgresURLRepository) Create(ctx context.Context, url *models.URL) (*models.URL, error) {
-	query := `INSERT INTO urls (id, short_code, long_url, custom_alias, expires_at)
-        VALUES ($1, $2, $3, $4, $5)
+	query := `INSERT INTO urls (id, user_id, short_code, long_url, custom_alias, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING ` + urlColumns
 	created, err := scanURL(r.pool.QueryRow(ctx, query,
-		url.ID, url.ShortCode, url.LongURL, url.CustomAlias, url.ExpiresAt,
+		url.ID, url.UserID, url.ShortCode, url.LongURL, url.CustomAlias, url.ExpiresAt,
 	))
 	return created, mapDatabaseError(err)
 }
 
-func (r *PostgresURLRepository) GetByShortCode(ctx context.Context, shortCode string) (*models.URL, error) {
+func (r *PostgresURLRepository) GetByShortCode(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error) {
 	url, err := scanURL(r.pool.QueryRow(ctx,
-		`SELECT `+urlColumns+` FROM urls WHERE short_code = $1`, shortCode))
+		`SELECT `+urlColumns+` FROM urls WHERE user_id = $1 AND short_code = $2`, userID, shortCode))
 	return url, mapDatabaseError(err)
 }
 
-func (r *PostgresURLRepository) Update(ctx context.Context, shortCode string, update models.UpdateURLRequest) (*models.URL, error) {
+func (r *PostgresURLRepository) GetPublicByShortCode(ctx context.Context, shortCode string) (*models.URL, error) {
+	url, err := scanURL(r.pool.QueryRow(ctx, `SELECT `+urlColumns+` FROM urls WHERE short_code = $1
+        AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`, shortCode))
+	return url, mapDatabaseError(err)
+}
+
+func (r *PostgresURLRepository) Update(ctx context.Context, userID uuid.UUID, shortCode string, update models.UpdateURLRequest) (*models.URL, error) {
 	sets := make([]string, 0, 4)
-	args := []any{shortCode}
+	args := []any{userID, shortCode}
 
 	if update.LongURL != nil {
 		args = append(args, *update.LongURL)
@@ -62,13 +70,13 @@ func (r *PostgresURLRepository) Update(ctx context.Context, shortCode string, up
 
 	sets = append(sets, "updated_at = CURRENT_TIMESTAMP")
 	query := `UPDATE urls SET ` + strings.Join(sets, ", ") +
-		` WHERE short_code = $1 RETURNING ` + urlColumns
+		` WHERE user_id = $1 AND short_code = $2 RETURNING ` + urlColumns
 	url, err := scanURL(r.pool.QueryRow(ctx, query, args...))
 	return url, mapDatabaseError(err)
 }
 
-func (r *PostgresURLRepository) Delete(ctx context.Context, shortCode string) error {
-	commandTag, err := r.pool.Exec(ctx, `DELETE FROM urls WHERE short_code = $1`, shortCode)
+func (r *PostgresURLRepository) Delete(ctx context.Context, userID uuid.UUID, shortCode string) error {
+	commandTag, err := r.pool.Exec(ctx, `DELETE FROM urls WHERE user_id = $1 AND short_code = $2`, userID, shortCode)
 	if err != nil {
 		return mapDatabaseError(err)
 	}

@@ -6,13 +6,14 @@ import (
 )
 
 const urlColumns = `
-    id, short_code, long_url, custom_alias, click_count,
+    id, user_id, short_code, long_url, custom_alias, click_count,
     created_at, updated_at, expires_at`
 
 func scanURL(row pgx.Row) (*models.URL, error) {
 	url := new(models.URL)
 	err := row.Scan(
 		&url.ID,
+		&url.UserID,
 		&url.ShortCode,
 		&url.LongURL,
 		&url.CustomAlias,
