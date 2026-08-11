@@ -4,8 +4,10 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mohdrashid9678/xlink/internal/auth"
 	"github.com/mohdrashid9678/xlink/internal/database"
 	"github.com/mohdrashid9678/xlink/internal/handlers"
+	"github.com/mohdrashid9678/xlink/internal/middleware"
 	"github.com/mohdrashid9678/xlink/internal/repository"
 	"github.com/mohdrashid9678/xlink/internal/routes"
 	"github.com/mohdrashid9678/xlink/internal/service"
@@ -15,8 +17,11 @@ import (
 func main() {
 	r := gin.Default()
 
-	cfg := config.LoadConfig()
-	db, err := database.NewPostgres(cfg.DBUrl)
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Configuration failed: %v", err)
+	}
+	db, err := database.NewPostgres(cfg.DBURL)
 	if err != nil {
 		log.Fatalf("Database connection failed: %v", err)
 	}
@@ -25,7 +30,11 @@ func main() {
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
 	urlService := service.NewURLService(urlRepository)
 	urlHandler := handlers.NewURLHandler(urlService)
-	routes.RegisterRoutes(r, urlHandler)
+	userRepository := repository.NewPostgresUserRepository(db.Pool)
+	refreshTokenRepository := repository.NewPostgresRefreshTokenRepository(db.Pool)
+	jwtManager := auth.NewJWTManager(cfg.JWTSigningKey)
+	authHandler := handlers.NewAuthHandler(service.NewAuthService(userRepository, refreshTokenRepository, jwtManager))
+	routes.RegisterRoutes(r, urlHandler, authHandler, middleware.RequireAuth(jwtManager))
 
 	// Start server on port 8080 (default)
 	if err := r.Run(":" + cfg.Port); err != nil {

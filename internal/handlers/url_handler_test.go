@@ -9,27 +9,33 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/mohdrashid9678/xlink/internal/middleware"
 	"github.com/mohdrashid9678/xlink/internal/models"
 )
 
 type stubURLService struct {
-	get  func(context.Context, string) (*models.URL, error)
-	incr func(context.Context, string) error
+	get    func(context.Context, uuid.UUID, string) (*models.URL, error)
+	public func(context.Context, string) (*models.URL, error)
+	incr   func(context.Context, string) error
 }
 
-func (s stubURLService) Create(context.Context, models.CreateURLRequest) (*models.URL, error) {
+func (s stubURLService) Create(context.Context, uuid.UUID, models.CreateURLRequest) (*models.URL, error) {
 	panic("unexpected Create call")
 }
 
-func (s stubURLService) Get(ctx context.Context, shortCode string) (*models.URL, error) {
-	return s.get(ctx, shortCode)
+func (s stubURLService) Get(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error) {
+	return s.get(ctx, userID, shortCode)
 }
 
-func (s stubURLService) Update(context.Context, string, models.UpdateURLRequest) (*models.URL, error) {
+func (s stubURLService) GetPublic(ctx context.Context, shortCode string) (*models.URL, error) {
+	return s.public(ctx, shortCode)
+}
+
+func (s stubURLService) Update(context.Context, uuid.UUID, string, models.UpdateURLRequest) (*models.URL, error) {
 	panic("unexpected Update call")
 }
 
-func (s stubURLService) Delete(context.Context, string) error {
+func (s stubURLService) Delete(context.Context, uuid.UUID, string) error {
 	panic("unexpected Delete call")
 }
 
@@ -44,7 +50,7 @@ func TestRedirectTracksClickWithoutWaitingForCounterUpdate(t *testing.T) {
 	trackingComplete := make(chan struct{})
 
 	handler := NewURLHandler(stubURLService{
-		get: func(_ context.Context, shortCode string) (*models.URL, error) {
+		public: func(_ context.Context, shortCode string) (*models.URL, error) {
 			if shortCode != "docs" {
 				t.Fatalf("expected short code docs, got %q", shortCode)
 			}
@@ -94,7 +100,7 @@ func TestRedirectTracksClickWithoutWaitingForCounterUpdate(t *testing.T) {
 func TestGetDoesNotTrackClick(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewURLHandler(stubURLService{
-		get: func(_ context.Context, shortCode string) (*models.URL, error) {
+		get: func(_ context.Context, _ uuid.UUID, shortCode string) (*models.URL, error) {
 			return &models.URL{ID: uuid.New(), ShortCode: shortCode}, nil
 		},
 		incr: func(context.Context, string) error {
@@ -104,7 +110,10 @@ func TestGetDoesNotTrackClick(t *testing.T) {
 	})
 
 	router := gin.New()
-	router.GET("/api/v1/urls/:shortCode", handler.Get)
+	router.GET("/api/v1/urls/:shortCode", func(c *gin.Context) {
+		c.Set(middleware.UserIDContextKey, uuid.New())
+		handler.Get(c)
+	})
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/urls/docs", nil)

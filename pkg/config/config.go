@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -8,21 +9,27 @@ import (
 )
 
 type Config struct {
-	Port      string
-	DBUrl     string
-	RedisAddr string
+	Port          string
+	DBURL         string
+	JWTSigningKey string
 }
 
-func LoadConfig() *Config {
+func LoadConfig() (*Config, error) {
 	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	return &Config{
-		Port:  getEnv("PORT", "8080"),
-		DBUrl: getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
+	signingKey := os.Getenv("AUTH_JWT_SECRET")
+	if len(signingKey) < 32 {
+		return nil, fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 bytes")
 	}
+
+	return &Config{
+		Port:          getEnv("PORT", "8080"),
+		DBURL:         getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
+		JWTSigningKey: signingKey,
+	}, nil
 }
 
 func getEnv(key, fallback string) string {

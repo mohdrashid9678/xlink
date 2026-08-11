@@ -11,10 +11,11 @@ import (
 )
 
 type URLService interface {
-	Create(ctx context.Context, input models.CreateURLRequest) (*models.URL, error)
-	Get(ctx context.Context, shortCode string) (*models.URL, error)
-	Update(ctx context.Context, shortCode string, input models.UpdateURLRequest) (*models.URL, error)
-	Delete(ctx context.Context, shortCode string) error
+	Create(ctx context.Context, userID uuid.UUID, input models.CreateURLRequest) (*models.URL, error)
+	Get(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error)
+	GetPublic(ctx context.Context, shortCode string) (*models.URL, error)
+	Update(ctx context.Context, userID uuid.UUID, shortCode string, input models.UpdateURLRequest) (*models.URL, error)
+	Delete(ctx context.Context, userID uuid.UUID, shortCode string) error
 	IncrementClickCount(ctx context.Context, shortCode string) error
 }
 
@@ -26,7 +27,7 @@ func NewURLService(repository repository.URLRepository) *DefaultURLService {
 	return &DefaultURLService{repository: repository}
 }
 
-func (s *DefaultURLService) Create(ctx context.Context, input models.CreateURLRequest) (*models.URL, error) {
+func (s *DefaultURLService) Create(ctx context.Context, userID uuid.UUID, input models.CreateURLRequest) (*models.URL, error) {
 	longURL, err := validateLongURL(input.LongURL)
 	if err != nil {
 		return nil, err
@@ -59,6 +60,7 @@ func (s *DefaultURLService) Create(ctx context.Context, input models.CreateURLRe
 
 		created, err := s.repository.Create(ctx, &models.URL{
 			ID:          id,
+			UserID:      userID,
 			ShortCode:   shortCode,
 			LongURL:     longURL,
 			CustomAlias: customAlias,
@@ -78,16 +80,25 @@ func (s *DefaultURLService) Create(ctx context.Context, input models.CreateURLRe
 	return nil, fmt.Errorf("generate a unique short code after %d attempts: %w", attempts, ErrConflict)
 }
 
-func (s *DefaultURLService) Get(ctx context.Context, shortCode string) (*models.URL, error) {
+func (s *DefaultURLService) Get(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error) {
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return nil, err
 	}
-	url, err := s.repository.GetByShortCode(ctx, shortCode)
+	url, err := s.repository.GetByShortCode(ctx, userID, shortCode)
 	return url, mapRepositoryError(err)
 }
 
-func (s *DefaultURLService) Update(ctx context.Context, shortCode string, input models.UpdateURLRequest) (*models.URL, error) {
+func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*models.URL, error) {
+	shortCode, err := validateShortCode(shortCode)
+	if err != nil {
+		return nil, err
+	}
+	url, err := s.repository.GetPublicByShortCode(ctx, shortCode)
+	return url, mapRepositoryError(err)
+}
+
+func (s *DefaultURLService) Update(ctx context.Context, userID uuid.UUID, shortCode string, input models.UpdateURLRequest) (*models.URL, error) {
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return nil, err
@@ -113,16 +124,16 @@ func (s *DefaultURLService) Update(ctx context.Context, shortCode string, input 
 		return nil, err
 	}
 
-	updated, err := s.repository.Update(ctx, shortCode, input)
+	updated, err := s.repository.Update(ctx, userID, shortCode, input)
 	return updated, mapRepositoryError(err)
 }
 
-func (s *DefaultURLService) Delete(ctx context.Context, shortCode string) error {
+func (s *DefaultURLService) Delete(ctx context.Context, userID uuid.UUID, shortCode string) error {
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return err
 	}
-	return mapRepositoryError(s.repository.Delete(ctx, shortCode))
+	return mapRepositoryError(s.repository.Delete(ctx, userID, shortCode))
 }
 
 // IncrementClickCount is intentionally separate from Update. Call it from a

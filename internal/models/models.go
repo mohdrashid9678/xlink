@@ -8,6 +8,7 @@ import (
 
 type URL struct {
 	ID          uuid.UUID  `json:"id"`
+	UserID      uuid.UUID  `json:"user_id"`
 	ShortCode   string     `json:"short_code"`
 	LongURL     string     `json:"long_url"`
 	CustomAlias *string    `json:"custom_alias,omitempty"`
