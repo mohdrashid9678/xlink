@@ -10,6 +10,9 @@ import (
 func RegisterRoutes(router *gin.Engine, urlHandler *handlers.URLHandler) {
 	// Public short links are separate from the versioned management API.
 	router.GET("/:shortCode", urlHandler.Redirect)
+	router.GET("/static/redirect", func(c *gin.Context) {
+		c.Redirect(302, "https://google.com")
+	})
 
 	v1 := router.Group("/api/v1")
 
