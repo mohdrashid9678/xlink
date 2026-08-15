@@ -32,3 +32,6 @@ build/
 
 # Next.js local env files
 .env*.local
+
+# test files
+loadtests
