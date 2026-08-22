@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mohdrashid9678/xlink/internal/auth"
+	"github.com/mohdrashid9678/xlink/internal/cache"
 	"github.com/mohdrashid9678/xlink/internal/database"
 	"github.com/mohdrashid9678/xlink/internal/handlers"
 	"github.com/mohdrashid9678/xlink/internal/middleware"
@@ -52,6 +54,16 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("connect database: %w", err)
 	}
 	defer db.Close()
+
+	redisClient, err := cache.NewRedisClient(cache.RedisConfig{
+		URL: cfg.RedisURL,
+	})
+	if err != nil {
+		appLogger.Warn("Redis connection unavailable, operating in database-only mode", slog.Any("error", err))
+	} else {
+		defer redisClient.Close()
+		appLogger.Info("Redis connection pool initialized")
+	}
 
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
 	userRepository := repository.NewPostgresUserRepository(db.Pool)
