@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/mohdrashid9678/xlink/internal/cache"
 	"github.com/mohdrashid9678/xlink/internal/models"
 	"github.com/mohdrashid9678/xlink/internal/repository"
+	"golang.org/x/sync/singleflight"
 )
 
 type URLService interface {
@@ -21,10 +23,15 @@ type URLService interface {
 
 type DefaultURLService struct {
 	repository repository.URLRepository
+	cache      cache.URLCache
+	sf         singleflight.Group
 }
 
-func NewURLService(repository repository.URLRepository) *DefaultURLService {
-	return &DefaultURLService{repository: repository}
+func NewURLService(repository repository.URLRepository, cache cache.URLCache) *DefaultURLService {
+	return &DefaultURLService{
+		repository: repository,
+		cache:      cache,
+	}
 }
 
 func (s *DefaultURLService) Create(ctx context.Context, userID uuid.UUID, input models.CreateURLRequest) (*models.URL, error) {
@@ -94,8 +101,52 @@ func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*m
 	if err != nil {
 		return nil, err
 	}
-	url, err := s.repository.GetPublicByShortCode(ctx, shortCode)
-	return url, mapRepositoryError(err)
+
+	// 1. Fast-path: Check L2 Cache
+	if s.cache != nil {
+		cached, err := s.cache.Get(ctx, shortCode)
+		if err == nil && cached != nil {
+			return cached, nil
+		}
+		if errors.Is(err, cache.ErrNotFoundCached) {
+			return nil, ErrNotFound
+		}
+	}
+
+	// 2. Cache Stampede & Penetration Prevention via singleflight
+	val, err, _ := s.sf.Do(shortCode, func() (any, error) {
+		// Double-check cache in case another flight populated it
+		if s.cache != nil {
+			if cached, err := s.cache.Get(ctx, shortCode); err == nil && cached != nil {
+				return cached, nil
+			}
+			if errors.Is(err, cache.ErrNotFoundCached) {
+				return nil, ErrNotFound
+			}
+		}
+
+		url, err := s.repository.GetPublicByShortCode(ctx, shortCode)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				if s.cache != nil {
+					_ = s.cache.SetNotFound(ctx, shortCode)
+				}
+				return nil, ErrNotFound
+			}
+			return nil, mapRepositoryError(err)
+		}
+
+		if s.cache != nil && url != nil {
+			_ = s.cache.Set(ctx, url)
+		}
+
+		return url, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return val.(*models.URL), nil
 }
 
 func (s *DefaultURLService) Update(ctx context.Context, userID uuid.UUID, shortCode string, input models.UpdateURLRequest) (*models.URL, error) {
@@ -125,7 +176,18 @@ func (s *DefaultURLService) Update(ctx context.Context, userID uuid.UUID, shortC
 	}
 
 	updated, err := s.repository.Update(ctx, userID, shortCode, input)
-	return updated, mapRepositoryError(err)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Delete(ctx, shortCode)
+		if input.CustomAlias != nil && *input.CustomAlias != shortCode {
+			_ = s.cache.Delete(ctx, *input.CustomAlias)
+		}
+	}
+
+	return updated, nil
 }
 
 func (s *DefaultURLService) Delete(ctx context.Context, userID uuid.UUID, shortCode string) error {
@@ -133,11 +195,17 @@ func (s *DefaultURLService) Delete(ctx context.Context, userID uuid.UUID, shortC
 	if err != nil {
 		return err
 	}
-	return mapRepositoryError(s.repository.Delete(ctx, userID, shortCode))
+	if err := s.repository.Delete(ctx, userID, shortCode); err != nil {
+		return mapRepositoryError(err)
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Delete(ctx, shortCode)
+	}
+
+	return nil
 }
 
-// IncrementClickCount is intentionally separate from Update. Call it from a
-// redirect handler or analytics workflow; it is not exposed as a client patch field.
 func (s *DefaultURLService) IncrementClickCount(ctx context.Context, shortCode string) error {
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {

@@ -55,6 +55,7 @@ func run(ctx context.Context) error {
 	}
 	defer db.Close()
 
+	var urlCache cache.URLCache
 	redisClient, err := cache.NewRedisClient(cache.RedisConfig{
 		URL: cfg.RedisURL,
 	})
@@ -62,7 +63,8 @@ func run(ctx context.Context) error {
 		appLogger.Warn("Redis connection unavailable, operating in database-only mode", slog.Any("error", err))
 	} else {
 		defer redisClient.Close()
-		appLogger.Info("Redis connection pool initialized")
+		urlCache = cache.NewRedisURLCache(redisClient)
+		appLogger.Info("Redis connection pool and URL cache initialized")
 	}
 
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
@@ -70,7 +72,7 @@ func run(ctx context.Context) error {
 	refreshTokenRepository := repository.NewPostgresRefreshTokenRepository(db.Pool)
 
 	jwtManager := auth.NewJWTManager(cfg.JWTSigningKey)
-	urlService := service.NewURLService(urlRepository)
+	urlService := service.NewURLService(urlRepository, urlCache)
 	authService := service.NewAuthService(userRepository, refreshTokenRepository, jwtManager)
 
 	urlHandler := handlers.NewURLHandler(urlService)
