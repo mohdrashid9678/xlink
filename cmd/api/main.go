@@ -18,6 +18,7 @@ import (
 	"github.com/mohdrashid9678/xlink/internal/server"
 	"github.com/mohdrashid9678/xlink/internal/service"
 	"github.com/mohdrashid9678/xlink/pkg/config"
+	"github.com/mohdrashid9678/xlink/pkg/logger"
 )
 
 func main() {
@@ -34,6 +35,11 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	appLogger := logger.New(logger.Config{
+		Level:  cfg.LogLevel,
+		Format: cfg.LogFormat,
+	})
 
 	db, err := database.NewPostgres(cfg.DBURL)
 	if err != nil {
@@ -52,7 +58,14 @@ func run(ctx context.Context) error {
 	urlHandler := handlers.NewURLHandler(urlService)
 	authHandler := handlers.NewAuthHandler(authService)
 
-	router := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.Use(
+		middleware.RequestID(),
+		middleware.StructuredLogger(appLogger),
+		middleware.Recovery(appLogger),
+	)
+
 	routes.RegisterRoutes(router, urlHandler, authHandler, middleware.RequireAuth(jwtManager))
 
 	srv := server.New(router, server.Config{
