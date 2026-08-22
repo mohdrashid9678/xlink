@@ -63,7 +63,7 @@ func (h *URLHandler) Redirect(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusFound, url.LongURL)
-	// h.trackClickAsync(shortCode)
+	h.trackClickAsync(shortCode)
 }
 
 func (h *URLHandler) Update(c *gin.Context) {
