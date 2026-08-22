@@ -12,10 +12,11 @@ type Config struct {
 	Port          string
 	DBURL         string
 	JWTSigningKey string
+	LogLevel      string
+	LogFormat     string
 }
 
 func LoadConfig() (*Config, error) {
-	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
@@ -29,6 +30,8 @@ func LoadConfig() (*Config, error) {
 		Port:          getEnv("PORT", "8080"),
 		DBURL:         getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
 		JWTSigningKey: signingKey,
+		LogLevel:      getEnv("LOG_LEVEL", "info"),
+		LogFormat:     getEnv("LOG_FORMAT", "json"),
 	}, nil
 }
 
