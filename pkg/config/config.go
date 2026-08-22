@@ -16,6 +16,7 @@ type Config struct {
 	LogLevel      string
 	LogFormat     string
 	AutoMigrate   bool
+	RedisURL      string
 }
 
 func LoadConfig() (*Config, error) {
@@ -37,6 +38,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
 		LogFormat:     getEnv("LOG_FORMAT", "json"),
 		AutoMigrate:   autoMigrate,
+		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
 	}, nil
 }
 
