@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	JWTSigningKey string
 	LogLevel      string
 	LogFormat     string
+	AutoMigrate   bool
 }
 
 func LoadConfig() (*Config, error) {
@@ -26,12 +28,15 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 bytes")
 	}
 
+	autoMigrate, _ := strconv.ParseBool(getEnv("AUTO_MIGRATE", "false"))
+
 	return &Config{
 		Port:          getEnv("PORT", "8080"),
 		DBURL:         getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
 		JWTSigningKey: signingKey,
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
 		LogFormat:     getEnv("LOG_FORMAT", "json"),
+		AutoMigrate:   autoMigrate,
 	}, nil
 }
 
