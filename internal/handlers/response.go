@@ -2,12 +2,13 @@ package handlers
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mohdrashid9678/xlink/internal/models"
 	"github.com/mohdrashid9678/xlink/internal/service"
+	"github.com/mohdrashid9678/xlink/pkg/logger"
 )
 
 func writeSuccess(c *gin.Context, status int, data any) {
@@ -15,22 +16,33 @@ func writeSuccess(c *gin.Context, status int, data any) {
 }
 
 func writeError(c *gin.Context, status int, code, message string) {
-	c.JSON(status, models.Response{
-		Success: false,
-		Error:   &models.ErrorInfo{Code: code, Message: message},
+	writeProblem(c, status, code, http.StatusText(status), message, nil)
+}
+
+func writeProblem(c *gin.Context, status int, code, title, detail string, invalidParams []models.InvalidParam) {
+	reqID := logger.GetRequestID(c.Request.Context())
+	c.JSON(status, models.ProblemDetails{
+		Type:          "urn:xlink:error:" + code,
+		Title:         title,
+		Status:        status,
+		Detail:        detail,
+		Code:          code,
+		Instance:      c.Request.URL.Path,
+		RequestID:     reqID,
+		InvalidParams: invalidParams,
 	})
 }
 
 func writeServiceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrValidation):
-		writeError(c, http.StatusBadRequest, "validation_error", err.Error())
+		writeProblem(c, http.StatusBadRequest, "validation_error", "Validation Failed", err.Error(), nil)
 	case errors.Is(err, service.ErrNotFound):
-		writeError(c, http.StatusNotFound, "not_found", "The short URL was not found.")
+		writeProblem(c, http.StatusNotFound, "not_found", "Resource Not Found", "The requested resource was not found.", nil)
 	case errors.Is(err, service.ErrConflict):
-		writeError(c, http.StatusConflict, "short_code_taken", "The requested short code is already in use.")
+		writeProblem(c, http.StatusConflict, "conflict", "Resource Conflict", "The requested resource already exists or conflict occurred.", nil)
 	default:
-		log.Printf("URL request failed: %v", err)
-		writeError(c, http.StatusInternalServerError, "internal_error", "An unexpected error occurred.")
+		slog.ErrorContext(c.Request.Context(), "Unhandled service error", slog.Any("error", err))
+		writeProblem(c, http.StatusInternalServerError, "internal_error", "Internal Server Error", "An unexpected error occurred.", nil)
 	}
 }

@@ -8,33 +8,57 @@ import (
 	"github.com/google/uuid"
 	"github.com/mohdrashid9678/xlink/internal/auth"
 	"github.com/mohdrashid9678/xlink/internal/models"
+	"github.com/mohdrashid9678/xlink/pkg/logger"
 )
 
-const UserIDContextKey = "authenticated_user_id"
+const (
+	UserIDContextKey = "user_id"
+	authHeaderPrefix = "Bearer "
+)
 
-func RequireAuth(jwt *auth.JWTManager) gin.HandlerFunc {
+func RequireAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		parts := strings.Fields(c.GetHeader("Authorization"))
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			unauthorized(c)
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			abortWithProblem(c, http.StatusUnauthorized, "unauthorized", "Unauthorized", "Authorization header is required.")
 			return
 		}
-		userID, err := jwt.Verify(parts[1])
+
+		tokenString := strings.TrimPrefix(authHeader, authHeaderPrefix)
+		if tokenString == authHeader || tokenString == "" {
+			abortWithProblem(c, http.StatusUnauthorized, "unauthorized", "Unauthorized", "Authorization header must be formatted as 'Bearer <token>'.")
+			return
+		}
+
+		userID, err := jwtManager.Verify(tokenString)
 		if err != nil {
-			unauthorized(c)
+			abortWithProblem(c, http.StatusUnauthorized, "unauthorized", "Unauthorized", "Access token is invalid or expired.")
 			return
 		}
+
 		c.Set(UserIDContextKey, userID)
 		c.Next()
 	}
 }
 
-func UserID(c *gin.Context) (uuid.UUID, bool) {
-	value, exists := c.Get(UserIDContextKey)
-	userID, ok := value.(uuid.UUID)
-	return userID, exists && ok
+func abortWithProblem(c *gin.Context, status int, code, title, detail string) {
+	reqID := logger.GetRequestID(c.Request.Context())
+	c.AbortWithStatusJSON(status, models.ProblemDetails{
+		Type:      "urn:xlink:error:" + code,
+		Title:     title,
+		Status:    status,
+		Detail:    detail,
+		Code:      code,
+		Instance:  c.Request.URL.Path,
+		RequestID: reqID,
+	})
 }
 
-func unauthorized(c *gin.Context) {
-	c.AbortWithStatusJSON(http.StatusUnauthorized, models.Response{Success: false, Error: &models.ErrorInfo{Code: "unauthorized", Message: "A valid access token is required."}})
+func UserID(c *gin.Context) (uuid.UUID, bool) {
+	value, exists := c.Get(UserIDContextKey)
+	if !exists {
+		return uuid.Nil, false
+	}
+	id, ok := value.(uuid.UUID)
+	return id, ok
 }
