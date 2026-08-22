@@ -1,7 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mohdrashid9678/xlink/internal/auth"
@@ -10,35 +15,49 @@ import (
 	"github.com/mohdrashid9678/xlink/internal/middleware"
 	"github.com/mohdrashid9678/xlink/internal/repository"
 	"github.com/mohdrashid9678/xlink/internal/routes"
+	"github.com/mohdrashid9678/xlink/internal/server"
 	"github.com/mohdrashid9678/xlink/internal/service"
 	"github.com/mohdrashid9678/xlink/pkg/config"
 )
 
 func main() {
-	r := gin.Default()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
+	if err := run(ctx); err != nil {
+		log.Fatalf("application terminated with error: %v", err)
+	}
+}
+
+func run(ctx context.Context) error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Configuration failed: %v", err)
+		return fmt.Errorf("load config: %w", err)
 	}
+
 	db, err := database.NewPostgres(cfg.DBURL)
 	if err != nil {
-		log.Fatalf("Database connection failed: %v", err)
+		return fmt.Errorf("connect database: %w", err)
 	}
 	defer db.Close()
 
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
-	urlService := service.NewURLService(urlRepository)
-	urlHandler := handlers.NewURLHandler(urlService)
 	userRepository := repository.NewPostgresUserRepository(db.Pool)
 	refreshTokenRepository := repository.NewPostgresRefreshTokenRepository(db.Pool)
+
 	jwtManager := auth.NewJWTManager(cfg.JWTSigningKey)
-	authHandler := handlers.NewAuthHandler(service.NewAuthService(userRepository, refreshTokenRepository, jwtManager))
-	routes.RegisterRoutes(r, urlHandler, authHandler, middleware.RequireAuth(jwtManager))
+	urlService := service.NewURLService(urlRepository)
+	authService := service.NewAuthService(userRepository, refreshTokenRepository, jwtManager)
 
-	// Start server on port 8080 (default)
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("failed to run server: %v", err)
-	}
+	urlHandler := handlers.NewURLHandler(urlService)
+	authHandler := handlers.NewAuthHandler(authService)
 
+	router := gin.Default()
+	routes.RegisterRoutes(router, urlHandler, authHandler, middleware.RequireAuth(jwtManager))
+
+	srv := server.New(router, server.Config{
+		Port: cfg.Port,
+	})
+
+	return srv.Serve(ctx)
 }
