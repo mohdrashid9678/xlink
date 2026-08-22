@@ -41,6 +41,12 @@ func run(ctx context.Context) error {
 		Format: cfg.LogFormat,
 	})
 
+	if cfg.AutoMigrate {
+		if err := database.RunMigrations(cfg.DBURL); err != nil {
+			return fmt.Errorf("database migrations failed: %w", err)
+		}
+	}
+
 	db, err := database.NewPostgres(cfg.DBURL)
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
