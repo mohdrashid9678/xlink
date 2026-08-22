@@ -69,7 +69,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 func writeAuthError(c *gin.Context, err error) {
 	if err == service.ErrInvalidCredentials {
-		writeError(c, http.StatusUnauthorized, "invalid_credentials", "Invalid credentials or refresh token.")
+		writeProblem(c, http.StatusUnauthorized, "invalid_credentials", "Invalid Credentials", "Invalid email/password or expired refresh token.", nil)
 		return
 	}
 	writeServiceError(c, err)
