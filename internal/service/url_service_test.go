@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,9 +43,10 @@ func (r stubURLRepository) IncrementClickCount(ctx context.Context, shortCode st
 }
 
 type stubURLCache struct {
-	get    func(ctx context.Context, shortCode string) (*models.URL, error)
-	set    func(ctx context.Context, url *models.URL) error
-	delete func(ctx context.Context, shortCode string) error
+	get         func(ctx context.Context, shortCode string) (*models.URL, error)
+	set         func(ctx context.Context, url *models.URL) error
+	setNotFound func(ctx context.Context, shortCode string) error
+	delete      func(ctx context.Context, shortCode string) error
 }
 
 func (c stubURLCache) Get(ctx context.Context, shortCode string) (*models.URL, error) {
@@ -55,6 +58,12 @@ func (c stubURLCache) Get(ctx context.Context, shortCode string) (*models.URL, e
 func (c stubURLCache) Set(ctx context.Context, url *models.URL) error {
 	if c.set != nil {
 		return c.set(ctx, url)
+	}
+	return nil
+}
+func (c stubURLCache) SetNotFound(ctx context.Context, shortCode string) error {
+	if c.setNotFound != nil {
+		return c.setNotFound(ctx, shortCode)
 	}
 	return nil
 }
@@ -209,6 +218,71 @@ func TestGetPublicPopulatesCacheOnMiss(t *testing.T) {
 	}
 	if !cacheSetCalled {
 		t.Fatal("expected cache.Set to be called on cache miss")
+	}
+}
+
+func TestGetPublicReturnsNotFoundFromNegativeCache(t *testing.T) {
+	svc := NewURLService(stubURLRepository{
+		public: func(context.Context, string) (*models.URL, error) {
+			t.Fatal("repository must NOT be called when negative cache is hit")
+			return nil, nil
+		},
+	}, stubURLCache{
+		get: func(ctx context.Context, shortCode string) (*models.URL, error) {
+			return nil, cache.ErrNotFoundCached
+		},
+	})
+
+	_, err := svc.GetPublic(context.Background(), "non-existent")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound from negative cache, got %v", err)
+	}
+}
+
+func TestSingleFlightCoalescesConcurrentRequests(t *testing.T) {
+	dbURL := &models.URL{
+		ID:        uuid.New(),
+		ShortCode: "viral-link",
+		LongURL:   "https://example.com/viral",
+	}
+
+	var repoCalls int64
+	svc := NewURLService(stubURLRepository{
+		public: func(ctx context.Context, shortCode string) (*models.URL, error) {
+			atomic.AddInt64(&repoCalls, 1)
+			time.Sleep(30 * time.Millisecond) // Simulate DB query latency
+			return dbURL, nil
+		},
+	}, stubURLCache{
+		get: func(ctx context.Context, shortCode string) (*models.URL, error) {
+			return nil, cache.ErrCacheMiss
+		},
+		set: func(ctx context.Context, url *models.URL) error {
+			return nil
+		},
+	})
+
+	const concurrentGoroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(concurrentGoroutines)
+
+	for i := 0; i < concurrentGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			url, err := svc.GetPublic(context.Background(), "viral-link")
+			if err != nil {
+				t.Errorf("expected success, got error: %v", err)
+			}
+			if url.LongURL != dbURL.LongURL {
+				t.Errorf("expected %q, got %q", dbURL.LongURL, url.LongURL)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if calls := atomic.LoadInt64(&repoCalls); calls != 1 {
+		t.Fatalf("expected exactly 1 repository call through singleflight, but got %d", calls)
 	}
 }
 

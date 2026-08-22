@@ -9,6 +9,7 @@ import (
 	"github.com/mohdrashid9678/xlink/internal/cache"
 	"github.com/mohdrashid9678/xlink/internal/models"
 	"github.com/mohdrashid9678/xlink/internal/repository"
+	"golang.org/x/sync/singleflight"
 )
 
 type URLService interface {
@@ -23,6 +24,7 @@ type URLService interface {
 type DefaultURLService struct {
 	repository repository.URLRepository
 	cache      cache.URLCache
+	sf         singleflight.Group
 }
 
 func NewURLService(repository repository.URLRepository, cache cache.URLCache) *DefaultURLService {
@@ -100,22 +102,51 @@ func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*m
 		return nil, err
 	}
 
+	// 1. Fast-path: Check L2 Cache
 	if s.cache != nil {
-		if cached, err := s.cache.Get(ctx, shortCode); err == nil && cached != nil {
+		cached, err := s.cache.Get(ctx, shortCode)
+		if err == nil && cached != nil {
 			return cached, nil
+		}
+		if errors.Is(err, cache.ErrNotFoundCached) {
+			return nil, ErrNotFound
 		}
 	}
 
-	url, err := s.repository.GetPublicByShortCode(ctx, shortCode)
+	// 2. Cache Stampede & Penetration Prevention via singleflight
+	val, err, _ := s.sf.Do(shortCode, func() (any, error) {
+		// Double-check cache in case another flight populated it
+		if s.cache != nil {
+			if cached, err := s.cache.Get(ctx, shortCode); err == nil && cached != nil {
+				return cached, nil
+			}
+			if errors.Is(err, cache.ErrNotFoundCached) {
+				return nil, ErrNotFound
+			}
+		}
+
+		url, err := s.repository.GetPublicByShortCode(ctx, shortCode)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				if s.cache != nil {
+					_ = s.cache.SetNotFound(ctx, shortCode)
+				}
+				return nil, ErrNotFound
+			}
+			return nil, mapRepositoryError(err)
+		}
+
+		if s.cache != nil && url != nil {
+			_ = s.cache.Set(ctx, url)
+		}
+
+		return url, nil
+	})
+
 	if err != nil {
-		return nil, mapRepositoryError(err)
+		return nil, err
 	}
-
-	if s.cache != nil && url != nil {
-		_ = s.cache.Set(ctx, url)
-	}
-
-	return url, nil
+	return val.(*models.URL), nil
 }
 
 func (s *DefaultURLService) Update(ctx context.Context, userID uuid.UUID, shortCode string, input models.UpdateURLRequest) (*models.URL, error) {
