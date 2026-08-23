@@ -163,7 +163,7 @@ sudo systemctl enable xlink
 sudo systemctl restart xlink
 
 echo "======================================================"
-echo " ✅ xlink App Server Setup Complete!"
+echo " xlink App Server Setup Complete!"
 echo " Service Status:"
 sudo systemctl status xlink --no-pager
 echo "======================================================"

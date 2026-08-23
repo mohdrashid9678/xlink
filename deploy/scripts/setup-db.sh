@@ -61,7 +61,7 @@ sudo systemctl restart postgresql
 PRIVATE_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
 
 echo "======================================================"
-echo " ✅ PostgreSQL 16 Provisioning Complete!"
+echo " PostgreSQL 16 Provisioning Complete!"
 echo " Connection string:"
 echo " postgresql://$DB_USER:$DB_PASSWORD@$PRIVATE_IP:5432/$DB_NAME?sslmode=disable"
 echo "======================================================"
