@@ -7,7 +7,7 @@ include .env
 export
 endif
 
-.PHONY: run build test migrate-up migrate-down migrate-create
+.PHONY: run build build-linux-amd64 build-linux-arm64 package-deploy test migrate-up migrate-down migrate-create
 
 run:
 	go run ./cmd/api
@@ -15,6 +15,17 @@ run:
 build:
 	mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/$(APP_NAME) ./cmd/api
+
+build-linux-amd64:
+	mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o $(BIN_DIR)/$(APP_NAME)-linux-amd64 ./cmd/api
+
+build-linux-arm64:
+	mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s" -o $(BIN_DIR)/$(APP_NAME)-linux-arm64 ./cmd/api
+
+package-deploy: build-linux-amd64 build-linux-arm64
+	tar -czvf $(BIN_DIR)/xlink-deploy.tar.gz deploy/ migrations/
 
 test:
 	go test -v -race ./...
