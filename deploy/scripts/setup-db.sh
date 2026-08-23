@@ -6,7 +6,15 @@ echo "   Provisioning PostgreSQL 16 on Ubuntu   "
 echo "========================================="
 
 sudo apt-get update -y
-sudo apt-get install -y postgresql-16 postgresql-contrib
+sudo apt-get install -y curl ca-certificates gnupg lsb-release
+
+# Add official PostgreSQL APT repository
+sudo install -d /etc/apt/keyrings
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg --yes
+echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+sudo apt-get update -y
+sudo apt-get install -y postgresql-16 postgresql-contrib-16 || sudo apt-get install -y postgresql postgresql-contrib
 
 # Start and enable PostgreSQL
 sudo systemctl enable postgresql
@@ -15,7 +23,7 @@ sudo systemctl start postgresql
 # Read DB Credentials or use defaults
 DB_NAME=${DB_NAME:-xlink}
 DB_USER=${DB_USER:-postgres}
-DB_PASSWORD=${DB_PASSWORD:-xLinkAdmin9678}
+DB_PASSWORD=${DB_PASSWORD:-"xLinkAdmin9678"}
 
 echo "Configuring database '$DB_NAME' and user '$DB_USER'..."
 
@@ -27,6 +35,7 @@ PG_CONF=$(sudo -u postgres psql -t -P format=unaligned -c 'SHOW config_file')
 PG_HBA=$(sudo -u postgres psql -t -P format=unaligned -c 'SHOW hba_file')
 
 sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" "$PG_CONF"
+sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/g" "$PG_CONF"
 
 # Allow password authentication from VPC CIDR 10.0.0.0/22
 if ! grep -q "10.0.0.0/22" "$PG_HBA"; then
@@ -36,6 +45,6 @@ fi
 sudo systemctl restart postgresql
 
 echo "========================================="
-echo " PostgreSQL 16 setup complete!"
+echo " PostgreSQL setup complete!"
 echo " Connection string: postgresql://$DB_USER:$DB_PASSWORD@<PRIVATE_IP>:5432/$DB_NAME?sslmode=disable"
 echo "========================================="
