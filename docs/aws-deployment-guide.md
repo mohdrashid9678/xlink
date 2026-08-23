@@ -1,137 +1,99 @@
-# AWS Self-Hosted Production Deployment Guide
+# AWS Production Deployment Guide (Zero Manual Setup)
 
-This guide walks through deploying **xlink** on self-hosted AWS EC2 instances inside your custom VPC (`10.0.0.0/22`).
-
----
-
-## 1. Network & VPC Layout
-
-| Component | CIDR / Subnet | Route Table Destination | Purpose |
-| :--- | :--- | :--- | :--- |
-| **VPC** | `10.0.0.0/22` | Local | Private VPC Network |
-| **Public Subnet (AZ-A)** | `10.0.0.0/24` | `0.0.0.0/0` -> Internet Gateway (IGW) | **App Server EC2** (xlink API + Nginx) |
-| **Private Subnet (AZ-A)** | `10.0.1.0/24` | Internal only (or NAT if outbound needed) | **PostgreSQL EC2 & Redis EC2** |
+This guide walks through deploying **xlink** on AWS EC2 instances inside your VPC (`10.0.0.0/22`).
 
 ---
 
-## 2. Security Groups
+## 1. AWS Security Groups (AWS Console)
 
-### A. App Server Security Group (`sg-xlink-app`)
-Attach to the EC2 in the **Public Subnet**:
-- **Inbound**:
-  - `HTTP (80)`: Source `0.0.0.0/0`
-  - `HTTPS (443)`: Source `0.0.0.0/0`
-  - `SSH (22)`: Source `<Your-Local-IP>/32`
-- **Outbound**:
-  - All traffic to `0.0.0.0/0` (or restricted to VPC CIDR)
+Create 3 Security Groups inside your VPC:
 
-### B. Database Security Group (`sg-xlink-db`)
-Attach to the PostgreSQL EC2 in the **Private Subnet**:
-- **Inbound**:
-  - `PostgreSQL (5432)`: Source `sg-xlink-app` (Reference by SG ID)
-  - `SSH (22)`: Source `sg-xlink-app` (Use App server as Bastion Jump host)
-- **Outbound**: All traffic
-
-### C. Redis Security Group (`sg-xlink-redis`)
-Attach to the Redis EC2 in the **Private Subnet**:
-- **Inbound**:
-  - `Redis (6379)`: Source `sg-xlink-app` (Reference by SG ID)
-  - `SSH (22)`: Source `sg-xlink-app`
-- **Outbound**: All traffic
+1. **`sg-xlink-app`** (Attached to App Server EC2):
+   - Inbound: `HTTP (80)` from `0.0.0.0/0`
+   - Inbound: `HTTPS (443)` from `0.0.0.0/0`
+   - Inbound: `SSH (22)` from `Your-IP/32` (or tester EC2)
+2. **`sg-xlink-db`** (Attached to PostgreSQL EC2):
+   - Inbound: `5432` from `sg-xlink-app` (Reference Security Group ID)
+   - Inbound: `22` from `sg-xlink-app`
+3. **`sg-xlink-redis`** (Attached to Redis EC2):
+   - Inbound: `6379` from `sg-xlink-app` (Reference Security Group ID)
+   - Inbound: `22` from `sg-xlink-app`
 
 ---
 
-## 3. Machine Setup Instructions
+## 2. Automated Deployment Steps
 
 ### Machine 1: PostgreSQL 16 (Private Subnet)
-1. SSH to App Server, then SSH to DB private IP:
-   ```bash
-   ssh -J ubuntu@<APP_PUBLIC_IP> ubuntu@<DB_PRIVATE_IP>
-   ```
-2. Run database provisioner:
-   ```bash
-   git clone https://github.com/mohdrashid9678/xlink.git
-   cd xlink
-   chmod +x deploy/scripts/setup-db.sh
-   DB_PASSWORD="YourStrongSecurePassword123!" ./deploy/scripts/setup-db.sh
-   ```
+
+SSH into your DB instance (via App Server as bastion jump host):
+```bash
+ssh -J ubuntu@<APP_PUBLIC_IP> ubuntu@<DB_PRIVATE_IP>
+```
+
+Run the automated DB provisioner:
+```bash
+git clone https://github.com/mohdrashid9678/xlink.git
+cd xlink
+git checkout feature/aws-self-hosted-deployment
+chmod +x deploy/scripts/setup-db.sh
+./deploy/scripts/setup-db.sh
+exit
+```
+*(Copy the printed PostgreSQL connection string/IP).*
 
 ---
 
 ### Machine 2: Redis 7 (Private Subnet)
-1. SSH into Redis instance via bastion:
-   ```bash
-   ssh -J ubuntu@<APP_PUBLIC_IP> ubuntu@<REDIS_PRIVATE_IP>
-   ```
-2. Run Redis provisioner:
-   ```bash
-   git clone https://github.com/mohdrashid9678/xlink.git
-   cd xlink
-   chmod +x deploy/scripts/setup-redis.sh
-   ./deploy/scripts/setup-redis.sh
-   ```
+
+SSH into your Redis instance:
+```bash
+ssh -J ubuntu@<APP_PUBLIC_IP> ubuntu@<REDIS_PRIVATE_IP>
+```
+
+Run the automated Redis provisioner:
+```bash
+git clone https://github.com/mohdrashid9678/xlink.git
+cd xlink
+git checkout feature/aws-self-hosted-deployment
+chmod +x deploy/scripts/setup-redis.sh
+./deploy/scripts/setup-redis.sh
+exit
+```
+*(Copy the printed Redis IP).*
 
 ---
 
 ### Machine 3: xlink App Server (Public Subnet)
-1. SSH into the App Server:
-   ```bash
-   ssh ubuntu@<APP_PUBLIC_IP>
-   ```
-2. Clone repository & run App setup:
-   ```bash
-   git clone https://github.com/mohdrashid9678/xlink.git
-   cd xlink
-   chmod +x deploy/scripts/setup-app.sh
-   ./deploy/scripts/setup-app.sh
-   ```
-3. Copy Linux binary into place:
-   ```bash
-   sudo cp bin/xlink-linux-arm64 /opt/xlink/bin/xlink   # For Graviton t4g/c7g
-   # OR: sudo cp bin/xlink-linux-amd64 /opt/xlink/bin/xlink # For Intel/AMD
-   sudo chmod +x /opt/xlink/bin/xlink
-   ```
-4. Create `/opt/xlink/.env`:
-   ```bash
-   sudo cp deploy/env.production.example /opt/xlink/.env
-   sudo nano /opt/xlink/.env
-   ```
-   *Fill in `<DB_PRIVATE_IP>`, `<REDIS_PRIVATE_IP>`, database password, and `AUTH_JWT_SECRET`.*
-   ```bash
-   sudo chown xlink:xlink /opt/xlink/.env
-   sudo chmod 600 /opt/xlink/.env
-   ```
-5. Start & Verify Service:
-   ```bash
-   sudo systemctl restart xlink
-   sudo systemctl status xlink
-   ```
-6. Check Live Logs:
-   ```bash
-   journalctl -u xlink -f
-   ```
+
+SSH into your App Server:
+```bash
+ssh ubuntu@<APP_PUBLIC_IP>
+```
+
+Run the automated App setup script:
+```bash
+git clone https://github.com/mohdrashid9678/xlink.git
+cd xlink
+git checkout feature/aws-self-hosted-deployment
+chmod +x deploy/scripts/setup-app.sh
+./deploy/scripts/setup-app.sh
+```
+
+The script will automatically:
+1. Apply Linux kernel socket tuning (`sysctl`).
+2. Install Golang & compile the binary into `bin/xlink`.
+3. Configure high-concurrency Nginx reverse proxy on port 80.
+4. Prompt for your DB & Redis private IPs (or use environment variables) and generate a secure `.env`.
+5. Register and start the `xlink.service` systemd service running in-place.
 
 ---
 
-## 4. End-to-End Verification
-
-From your local terminal, test the live API via the App Server's Public IP or Domain:
+## 3. Verify Live API
 
 ```bash
 # 1. Health Probe
 curl -i http://<APP_PUBLIC_IP>/api/v1/health
 
-# 2. Register Account
-curl -i -X POST http://<APP_PUBLIC_IP>/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"Password123!","name":"Admin"}'
-
-# 3. Create Short URL
-curl -i -X POST http://<APP_PUBLIC_IP>/api/v1/urls \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"long_url":"https://google.com","custom_alias":"google"}'
-
-# 4. Test Redirect Resolution (Fast Cache Hit)
-curl -i http://<APP_PUBLIC_IP>/google
+# 2. Check Service Logs
+sudo journalctl -u xlink -f
 ```
