@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -55,17 +54,8 @@ func run(ctx context.Context) error {
 	}
 	defer db.Close()
 
-	var urlCache cache.URLCache
-	redisClient, err := cache.NewRedisClient(cache.RedisConfig{
-		URL: cfg.RedisURL,
-	})
-	if err != nil {
-		appLogger.Warn("Redis connection unavailable, operating in database-only mode", slog.Any("error", err))
-	} else {
-		defer redisClient.Close()
-		urlCache = cache.NewRedisURLCache(redisClient)
-		appLogger.Info("Redis connection pool and URL cache initialized")
-	}
+	urlCache, closeCache := cache.NewURLCacheStack(ctx, cfg.RedisURL, appLogger)
+	defer closeCache()
 
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
 	userRepository := repository.NewPostgresUserRepository(db.Pool)

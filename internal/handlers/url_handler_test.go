@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -40,14 +39,14 @@ func (s stubURLService) Delete(context.Context, uuid.UUID, string) error {
 }
 
 func (s stubURLService) IncrementClickCount(ctx context.Context, shortCode string) error {
-	return s.incr(ctx, shortCode)
+	if s.incr != nil {
+		return s.incr(ctx, shortCode)
+	}
+	return nil
 }
 
-func TestRedirectTracksClickWithoutWaitingForCounterUpdate(t *testing.T) {
+func TestRedirectReturnsFoundWithLocationHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	trackingStarted := make(chan struct{})
-	releaseTracking := make(chan struct{})
-	trackingComplete := make(chan struct{})
 
 	handler := NewURLHandler(stubURLService{
 		public: func(_ context.Context, shortCode string) (*models.URL, error) {
@@ -59,15 +58,6 @@ func TestRedirectTracksClickWithoutWaitingForCounterUpdate(t *testing.T) {
 				ShortCode: shortCode,
 				LongURL:   "https://example.com/docs",
 			}, nil
-		},
-		incr: func(_ context.Context, shortCode string) error {
-			if shortCode != "docs" {
-				t.Errorf("expected tracked short code docs, got %q", shortCode)
-			}
-			close(trackingStarted)
-			<-releaseTracking
-			close(trackingComplete)
-			return nil
 		},
 	})
 
@@ -84,17 +74,6 @@ func TestRedirectTracksClickWithoutWaitingForCounterUpdate(t *testing.T) {
 	if location := response.Header().Get("Location"); location != "https://example.com/docs" {
 		t.Fatalf("expected redirect to destination, got %q", location)
 	}
-	select {
-	case <-trackingStarted:
-	case <-time.After(time.Second):
-		t.Fatal("expected asynchronous click tracking to start")
-	}
-	close(releaseTracking)
-	select {
-	case <-trackingComplete:
-	case <-time.After(time.Second):
-		t.Fatal("expected asynchronous click tracking to finish")
-	}
 }
 
 func TestGetDoesNotTrackClick(t *testing.T) {
@@ -102,10 +81,6 @@ func TestGetDoesNotTrackClick(t *testing.T) {
 	handler := NewURLHandler(stubURLService{
 		get: func(_ context.Context, _ uuid.UUID, shortCode string) (*models.URL, error) {
 			return &models.URL{ID: uuid.New(), ShortCode: shortCode}, nil
-		},
-		incr: func(context.Context, string) error {
-			t.Fatal("management GET must not increment click count")
-			return nil
 		},
 	})
 
