@@ -71,13 +71,14 @@ func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 
 	urlHandler := handlers.NewURLHandler(mockURLService{})
 	authHandler := handlers.NewAuthHandler(mockAuthService{})
+	healthHandler := handlers.NewHealthHandler(nil, nil)
 
 	mockAuthMiddleware := func(c *gin.Context) {
 		c.Set(middleware.UserIDContextKey, uuid.New())
 		c.Next()
 	}
 
-	RegisterRoutes(router, urlHandler, authHandler, mockAuthMiddleware)
+	RegisterRoutes(router, urlHandler, authHandler, healthHandler, mockAuthMiddleware)
 
 	tests := []struct {
 		method         string
@@ -85,6 +86,10 @@ func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 		body           string
 		expectedStatus int
 	}{
+		{"GET", "/metrics", "", http.StatusOK},
+		{"GET", "/healthz", "", http.StatusOK},
+		{"GET", "/livez", "", http.StatusOK},
+		{"GET", "/readyz", "", http.StatusOK},
 		{"GET", "/api/v1/health", "", http.StatusOK},
 		{"POST", "/api/v1/auth/register", `{"email":"a@b.com","password":"Password123!","name":"Test"}`, http.StatusCreated},
 		{"POST", "/api/v1/auth/login", `{"email":"a@b.com","password":"Password123!"}`, http.StatusOK},

@@ -20,6 +20,7 @@ import (
 	"github.com/mohdrashid9678/xlink/internal/service"
 	"github.com/mohdrashid9678/xlink/pkg/config"
 	"github.com/mohdrashid9678/xlink/pkg/logger"
+	"github.com/mohdrashid9678/xlink/pkg/metrics"
 )
 
 func main() {
@@ -54,7 +55,7 @@ func run(ctx context.Context) error {
 	}
 	defer db.Close()
 
-	urlCache, closeCache := cache.NewURLCacheStack(ctx, cfg.RedisURL, appLogger)
+	urlCache, redisClient, closeCache := cache.NewURLCacheStack(ctx, cfg.RedisURL, appLogger)
 	defer closeCache()
 
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
@@ -67,16 +68,18 @@ func run(ctx context.Context) error {
 
 	urlHandler := handlers.NewURLHandler(urlService)
 	authHandler := handlers.NewAuthHandler(authService)
+	healthHandler := handlers.NewHealthHandler(db.Pool, redisClient)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(
 		middleware.RequestID(),
 		middleware.StructuredLogger(appLogger),
+		middleware.PrometheusMetrics(metrics.DefaultMetrics),
 		middleware.Recovery(appLogger),
 	)
 
-	routes.RegisterRoutes(router, urlHandler, authHandler, middleware.RequireAuth(jwtManager))
+	routes.RegisterRoutes(router, urlHandler, authHandler, healthHandler, middleware.RequireAuth(jwtManager))
 
 	srv := server.New(router, server.Config{
 		Port: cfg.Port,

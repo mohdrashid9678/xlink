@@ -1,13 +1,28 @@
 package routes
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/mohdrashid9678/xlink/internal/handlers"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func RegisterRoutes(router *gin.Engine, urlHandler *handlers.URLHandler, authHandler *handlers.AuthHandler, authMiddleware gin.HandlerFunc) {
+func RegisterRoutes(
+	router *gin.Engine,
+	urlHandler *handlers.URLHandler,
+	authHandler *handlers.AuthHandler,
+	healthHandler *handlers.HealthHandler,
+	authMiddleware gin.HandlerFunc,
+) {
+	// Prometheus metrics scrape endpoint
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	// Cloud-native & Kubernetes health probes
+	if healthHandler != nil {
+		router.GET("/healthz", healthHandler.Healthz)
+		router.GET("/livez", healthHandler.Livez)
+		router.GET("/readyz", healthHandler.Readyz)
+	}
+
 	// Public short links are separate from the versioned management API.
 	router.GET("/:shortCode", urlHandler.Redirect)
 	router.GET("/static/redirect", func(c *gin.Context) {
@@ -16,9 +31,10 @@ func RegisterRoutes(router *gin.Engine, urlHandler *handlers.URLHandler, authHan
 
 	v1 := router.Group("/api/v1")
 
-	v1.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "ok"})
-	})
+	if healthHandler != nil {
+		v1.GET("/health", healthHandler.Healthz)
+	}
+
 	authRoutes := v1.Group("/auth")
 	authRoutes.POST("/register", authHandler.Register)
 	authRoutes.POST("/login", authHandler.Login)
