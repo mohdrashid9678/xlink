@@ -16,7 +16,7 @@ func RegisterRoutes(
 	// Prometheus metrics scrape endpoint
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// Cloud-native & Kubernetes health probes
+	// Health probes
 	if healthHandler != nil {
 		router.GET("/healthz", healthHandler.Healthz)
 		router.GET("/livez", healthHandler.Livez)
