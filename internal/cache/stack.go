@@ -7,11 +7,12 @@ import (
 
 // NewURLCacheStack builds and initializes the complete multi-tier caching stack:
 // L1 (Ristretto TinyLFU In-Memory) + L2 (Redis Distributed Cache) + Redis Pub/Sub Coordination.
-// It returns a unified URLCache and a cleanup function to gracefully release resources on shutdown.
-func NewURLCacheStack(ctx context.Context, redisURL string, log *slog.Logger) (URLCache, func()) {
+// It returns a unified URLCache, the underlying RedisClient (if available), and a cleanup function.
+func NewURLCacheStack(ctx context.Context, redisURL string, log *slog.Logger) (URLCache, *RedisClient, func()) {
 	var (
 		l1          L1Cache
 		l2          *RedisURLCache
+		redisCl     *RedisClient
 		coordinator CacheCoordinator
 		cleanups    []func()
 	)
@@ -26,14 +27,15 @@ func NewURLCacheStack(ctx context.Context, redisURL string, log *slog.Logger) (U
 	}
 
 	// 2. Initialize L2 Redis & Pub/Sub Coordination
-	if redisClient, err := NewRedisClient(RedisConfig{URL: redisURL}); err != nil {
+	if client, err := NewRedisClient(RedisConfig{URL: redisURL}); err != nil {
 		log.Warn("Redis connection unavailable, operating in database-only mode", slog.Any("error", err))
 	} else {
-		cleanups = append(cleanups, func() { _ = redisClient.Close() })
-		l2 = NewRedisURLCache(redisClient)
+		redisCl = client
+		cleanups = append(cleanups, func() { _ = client.Close() })
+		l2 = NewRedisURLCache(client)
 
 		if l1 != nil {
-			coord := NewRedisPubSubCoordinator(redisClient, l1, log)
+			coord := NewRedisPubSubCoordinator(client, l1, log)
 			coord.Start(ctx)
 			cleanups = append(cleanups, func() { _ = coord.Close() })
 			coordinator = coord
@@ -47,5 +49,5 @@ func NewURLCacheStack(ctx context.Context, redisURL string, log *slog.Logger) (U
 		}
 	}
 
-	return NewMultiTierURLCache(l1, l2, coordinator), closeFunc
+	return NewMultiTierURLCache(l1, l2, coordinator), redisCl, closeFunc
 }
