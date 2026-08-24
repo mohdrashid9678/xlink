@@ -10,13 +10,16 @@ import (
 )
 
 type Config struct {
-	Port          string
-	DBURL         string
-	JWTSigningKey string
-	LogLevel      string
-	LogFormat     string
-	AutoMigrate   bool
-	RedisURL      string
+	Port              string
+	DBURL             string
+	JWTSigningKey     string
+	LogLevel          string
+	LogFormat         string
+	AutoMigrate       bool
+	RedisURL          string
+	OTelEndpoint      string
+	OTelSamplingRatio float64
+	ServiceName       string
 }
 
 func LoadConfig() (*Config, error) {
@@ -30,15 +33,19 @@ func LoadConfig() (*Config, error) {
 	}
 
 	autoMigrate, _ := strconv.ParseBool(getEnv("AUTO_MIGRATE", "false"))
+	samplingRatio, _ := strconv.ParseFloat(getEnv("OTEL_SAMPLING_RATIO", "1.0"), 64)
 
 	return &Config{
-		Port:          getEnv("PORT", "8080"),
-		DBURL:         getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
-		JWTSigningKey: signingKey,
-		LogLevel:      getEnv("LOG_LEVEL", "info"),
-		LogFormat:     getEnv("LOG_FORMAT", "json"),
-		AutoMigrate:   autoMigrate,
-		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
+		Port:              getEnv("PORT", "8080"),
+		DBURL:             getEnv("DB_URL", "postgresql://postgres:password@localhost:5432/xlink?sslmode=disable"),
+		JWTSigningKey:     signingKey,
+		LogLevel:          getEnv("LOG_LEVEL", "info"),
+		LogFormat:         getEnv("LOG_FORMAT", "json"),
+		AutoMigrate:       autoMigrate,
+		RedisURL:          getEnv("REDIS_URL", "redis://localhost:6379/0"),
+		OTelEndpoint:      getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		OTelSamplingRatio: samplingRatio,
+		ServiceName:       getEnv("OTEL_SERVICE_NAME", "xlink-api"),
 	}, nil
 }
 
