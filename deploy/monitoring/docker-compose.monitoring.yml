@@ -33,6 +33,17 @@ services:
     depends_on:
       - prometheus
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: xlink_jaeger
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+
 volumes:
   prometheus_data:
   grafana_data:

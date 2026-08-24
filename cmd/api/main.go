@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"github.com/mohdrashid9678/xlink/pkg/config"
 	"github.com/mohdrashid9678/xlink/pkg/logger"
 	"github.com/mohdrashid9678/xlink/pkg/metrics"
+	"github.com/mohdrashid9678/xlink/pkg/tracer"
 )
 
 func main() {
@@ -42,6 +44,22 @@ func run(ctx context.Context) error {
 		Level:  cfg.LogLevel,
 		Format: cfg.LogFormat,
 	})
+
+	// Initialize OpenTelemetry Distributed Tracer
+	_, shutdownTracer, err := tracer.InitTracer(ctx, tracer.Config{
+		ServiceName:   cfg.ServiceName,
+		Endpoint:      cfg.OTelEndpoint,
+		SamplingRatio: cfg.OTelSamplingRatio,
+	})
+	if err != nil {
+		appLogger.Warn("failed to initialize OpenTelemetry tracer", slog.Any("error", err))
+	} else {
+		defer func() {
+			if err := shutdownTracer(context.Background()); err != nil {
+				appLogger.Warn("error shutting down tracer", slog.Any("error", err))
+			}
+		}()
+	}
 
 	if cfg.AutoMigrate {
 		if err := database.RunMigrations(cfg.DBURL); err != nil {
@@ -73,6 +91,8 @@ func run(ctx context.Context) error {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(
+		middleware.OpenTelemetryTracing(cfg.ServiceName),
+		middleware.TraceResponseHeader(),
 		middleware.RequestID(),
 		middleware.StructuredLogger(appLogger),
 		middleware.PrometheusMetrics(metrics.DefaultMetrics),
