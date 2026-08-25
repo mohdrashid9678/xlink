@@ -100,6 +100,9 @@ func run(ctx context.Context) error {
 	)
 
 	routes.RegisterRoutes(router, urlHandler, authHandler, healthHandler, middleware.RequireAuth(jwtManager))
+	if cfg.PProfEnabled {
+		routes.RegisterPProfRoutes(router)
+	}
 
 	srv := server.New(router, server.Config{
 		Port: cfg.Port,

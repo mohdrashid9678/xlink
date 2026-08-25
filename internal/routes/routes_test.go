@@ -79,6 +79,7 @@ func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 	}
 
 	RegisterRoutes(router, urlHandler, authHandler, healthHandler, mockAuthMiddleware)
+	RegisterPProfRoutes(router)
 
 	tests := []struct {
 		method         string
@@ -90,6 +91,8 @@ func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 		{"GET", "/healthz", "", http.StatusOK},
 		{"GET", "/livez", "", http.StatusOK},
 		{"GET", "/readyz", "", http.StatusOK},
+		{"GET", "/debug/pprof/", "", http.StatusOK},
+		{"GET", "/debug/pprof/heap", "", http.StatusOK},
 		{"GET", "/api/v1/health", "", http.StatusOK},
 		{"POST", "/api/v1/auth/register", `{"email":"a@b.com","password":"Password123!","name":"Test"}`, http.StatusCreated},
 		{"POST", "/api/v1/auth/login", `{"email":"a@b.com","password":"Password123!"}`, http.StatusOK},
@@ -115,5 +118,24 @@ func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 				t.Errorf("%s %s expected status %d, got %d, body: %s", tt.method, tt.path, tt.expectedStatus, rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestPProfDisabledWhenNotMounted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	urlHandler := handlers.NewURLHandler(mockURLService{})
+	authHandler := handlers.NewAuthHandler(mockAuthService{})
+	healthHandler := handlers.NewHealthHandler(nil, nil)
+
+	RegisterRoutes(router, urlHandler, authHandler, healthHandler, func(c *gin.Context) {})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 when pprof not registered, got %d", rec.Code)
 	}
 }

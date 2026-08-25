@@ -20,6 +20,7 @@ type Config struct {
 	OTelEndpoint      string
 	OTelSamplingRatio float64
 	ServiceName       string
+	PProfEnabled      bool
 }
 
 func LoadConfig() (*Config, error) {
@@ -34,6 +35,7 @@ func LoadConfig() (*Config, error) {
 
 	autoMigrate, _ := strconv.ParseBool(getEnv("AUTO_MIGRATE", "false"))
 	samplingRatio, _ := strconv.ParseFloat(getEnv("OTEL_SAMPLING_RATIO", "1.0"), 64)
+	pprofEnabled, _ := strconv.ParseBool(getEnv("PPROF_ENABLED", "false"))
 
 	return &Config{
 		Port:              getEnv("PORT", "8080"),
@@ -46,6 +48,7 @@ func LoadConfig() (*Config, error) {
 		OTelEndpoint:      getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		OTelSamplingRatio: samplingRatio,
 		ServiceName:       getEnv("OTEL_SERVICE_NAME", "xlink-api"),
+		PProfEnabled:      pprofEnabled,
 	}, nil
 }
 
