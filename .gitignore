@@ -34,5 +34,4 @@ build/
 .env*.local
 
 # test files
-loadtests
 dump.rdb
