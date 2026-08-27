@@ -9,6 +9,9 @@ import (
 	"github.com/mohdrashid9678/xlink/internal/cache"
 	"github.com/mohdrashid9678/xlink/internal/models"
 	"github.com/mohdrashid9678/xlink/internal/repository"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -35,6 +38,9 @@ func NewURLService(repository repository.URLRepository, cache cache.URLCache) *D
 }
 
 func (s *DefaultURLService) Create(ctx context.Context, userID uuid.UUID, input models.CreateURLRequest) (*models.URL, error) {
+	ctx, span := otel.Tracer("xlink-service").Start(ctx, "service.Create")
+	defer span.End()
+
 	longURL, err := validateLongURL(input.LongURL)
 	if err != nil {
 		return nil, err
@@ -74,6 +80,7 @@ func (s *DefaultURLService) Create(ctx context.Context, userID uuid.UUID, input 
 			ExpiresAt:   input.ExpiresAt,
 		})
 		if err == nil {
+			span.SetAttributes(attribute.String("url.short_code", shortCode))
 			return created, nil
 		}
 		if errors.Is(err, repository.ErrConflict) {
@@ -88,6 +95,11 @@ func (s *DefaultURLService) Create(ctx context.Context, userID uuid.UUID, input 
 }
 
 func (s *DefaultURLService) Get(ctx context.Context, userID uuid.UUID, shortCode string) (*models.URL, error) {
+	ctx, span := otel.Tracer("xlink-service").Start(ctx, "service.Get",
+		trace.WithAttributes(attribute.String("url.short_code", shortCode)),
+	)
+	defer span.End()
+
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return nil, err
@@ -97,27 +109,38 @@ func (s *DefaultURLService) Get(ctx context.Context, userID uuid.UUID, shortCode
 }
 
 func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*models.URL, error) {
+	ctx, span := otel.Tracer("xlink-service").Start(ctx, "service.GetPublic",
+		trace.WithAttributes(attribute.String("url.short_code", shortCode)),
+	)
+	defer span.End()
+
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return nil, err
 	}
 
-	// 1. Fast-path: Check L2 Cache
+	// 1. Fast-path: Check L1/L2 Cache
 	if s.cache != nil {
 		cached, err := s.cache.Get(ctx, shortCode)
 		if err == nil && cached != nil {
+			span.SetAttributes(attribute.String("cache.status", "hit"))
 			return cached, nil
 		}
 		if errors.Is(err, cache.ErrNotFoundCached) {
+			span.SetAttributes(attribute.String("cache.status", "negative_hit"))
 			return nil, ErrNotFound
 		}
+		span.SetAttributes(attribute.String("cache.status", "miss"))
 	}
 
 	// 2. Cache Stampede & Penetration Prevention via singleflight
 	val, err, _ := s.sf.Do(shortCode, func() (any, error) {
+		sfCtx, sfSpan := otel.Tracer("xlink-service").Start(ctx, "service.SingleFlightQuery")
+		defer sfSpan.End()
+
 		// Double-check cache in case another flight populated it
 		if s.cache != nil {
-			if cached, err := s.cache.Get(ctx, shortCode); err == nil && cached != nil {
+			if cached, err := s.cache.Get(sfCtx, shortCode); err == nil && cached != nil {
 				return cached, nil
 			}
 			if errors.Is(err, cache.ErrNotFoundCached) {
@@ -125,11 +148,11 @@ func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*m
 			}
 		}
 
-		url, err := s.repository.GetPublicByShortCode(ctx, shortCode)
+		url, err := s.repository.GetPublicByShortCode(sfCtx, shortCode)
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				if s.cache != nil {
-					_ = s.cache.SetNotFound(ctx, shortCode)
+					_ = s.cache.SetNotFound(sfCtx, shortCode)
 				}
 				return nil, ErrNotFound
 			}
@@ -137,7 +160,7 @@ func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*m
 		}
 
 		if s.cache != nil && url != nil {
-			_ = s.cache.Set(ctx, url)
+			_ = s.cache.Set(sfCtx, url)
 		}
 
 		return url, nil
@@ -150,6 +173,11 @@ func (s *DefaultURLService) GetPublic(ctx context.Context, shortCode string) (*m
 }
 
 func (s *DefaultURLService) Update(ctx context.Context, userID uuid.UUID, shortCode string, input models.UpdateURLRequest) (*models.URL, error) {
+	ctx, span := otel.Tracer("xlink-service").Start(ctx, "service.Update",
+		trace.WithAttributes(attribute.String("url.short_code", shortCode)),
+	)
+	defer span.End()
+
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return nil, err
@@ -191,6 +219,11 @@ func (s *DefaultURLService) Update(ctx context.Context, userID uuid.UUID, shortC
 }
 
 func (s *DefaultURLService) Delete(ctx context.Context, userID uuid.UUID, shortCode string) error {
+	ctx, span := otel.Tracer("xlink-service").Start(ctx, "service.Delete",
+		trace.WithAttributes(attribute.String("url.short_code", shortCode)),
+	)
+	defer span.End()
+
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return err
@@ -207,6 +240,11 @@ func (s *DefaultURLService) Delete(ctx context.Context, userID uuid.UUID, shortC
 }
 
 func (s *DefaultURLService) IncrementClickCount(ctx context.Context, shortCode string) error {
+	ctx, span := otel.Tracer("xlink-service").Start(ctx, "service.IncrementClickCount",
+		trace.WithAttributes(attribute.String("url.short_code", shortCode)),
+	)
+	defer span.End()
+
 	shortCode, err := validateShortCode(shortCode)
 	if err != nil {
 		return err
