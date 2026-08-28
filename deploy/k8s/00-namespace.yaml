@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xlink
+  labels:
+    app.kubernetes.io/name: xlink
+    app.kubernetes.io/part-of: xlink-system

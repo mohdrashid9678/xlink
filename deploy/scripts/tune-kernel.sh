@@ -5,7 +5,7 @@ set -euo pipefail
 # Linux Kernel Tuning Script for High-Throughput HTTP (100K+ RPS)
 # ==============================================================================
 
-echo "⚙️ Applying High-Throughput Linux Kernel Tuning..."
+echo "[INFO] Applying High-Throughput Linux Kernel Tuning..."
 
 # 1. Increase System-Wide File Descriptor Limits (1 Million)
 cat <<EOF | sudo tee /etc/security/limits.d/99-xlink.conf
@@ -54,4 +54,4 @@ EOF
 # Apply sysctl parameters immediately
 sudo sysctl --system
 
-echo "✅ Kernel tuning applied successfully for 100K+ RPS!"
+echo "[SUCCESS] Kernel tuning applied successfully for 100K+ RPS!"
