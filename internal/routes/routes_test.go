@@ -65,20 +65,30 @@ func (m mockAuthService) Logout(ctx context.Context, refreshToken string) error 
 	return nil
 }
 
+type mockAnalyticsService struct{}
+
+func (m mockAnalyticsService) GetURLAnalytics(ctx context.Context, userID uuid.UUID, shortCode string, query models.AnalyticsQuery) (*models.AnalyticsSummary, error) {
+	return &models.AnalyticsSummary{
+		ShortCode:   shortCode,
+		TotalClicks: 10,
+	}, nil
+}
+
 func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	urlHandler := handlers.NewURLHandler(mockURLService{})
+	urlHandler := handlers.NewURLHandler(mockURLService{}, nil, nil)
 	authHandler := handlers.NewAuthHandler(mockAuthService{})
 	healthHandler := handlers.NewHealthHandler(nil, nil)
+	analyticsHandler := handlers.NewAnalyticsHandler(mockAnalyticsService{})
 
 	mockAuthMiddleware := func(c *gin.Context) {
 		c.Set(middleware.UserIDContextKey, uuid.New())
 		c.Next()
 	}
 
-	RegisterRoutes(router, urlHandler, authHandler, healthHandler, mockAuthMiddleware)
+	RegisterRoutes(router, urlHandler, authHandler, healthHandler, analyticsHandler, mockAuthMiddleware)
 	RegisterPProfRoutes(router)
 
 	tests := []struct {
@@ -102,6 +112,7 @@ func TestRegisteredRoutesMatchExpectedPaths(t *testing.T) {
 		{"GET", "/api/v1/urls/test", "", http.StatusOK},
 		{"PATCH", "/api/v1/urls/test", `{"long_url":"https://updated.com"}`, http.StatusOK},
 		{"DELETE", "/api/v1/urls/test", "", http.StatusOK},
+		{"GET", "/api/v1/urls/test/analytics", "", http.StatusOK},
 		{"GET", "/docs", "", http.StatusFound},
 	}
 
@@ -125,11 +136,12 @@ func TestPProfDisabledWhenNotMounted(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	urlHandler := handlers.NewURLHandler(mockURLService{})
+	urlHandler := handlers.NewURLHandler(mockURLService{}, nil, nil)
 	authHandler := handlers.NewAuthHandler(mockAuthService{})
 	healthHandler := handlers.NewHealthHandler(nil, nil)
+	analyticsHandler := handlers.NewAnalyticsHandler(mockAnalyticsService{})
 
-	RegisterRoutes(router, urlHandler, authHandler, healthHandler, func(c *gin.Context) {})
+	RegisterRoutes(router, urlHandler, authHandler, healthHandler, analyticsHandler, func(c *gin.Context) {})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)

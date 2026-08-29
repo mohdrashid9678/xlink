@@ -1,20 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mohdrashid9678/xlink/internal/analytics"
 	"github.com/mohdrashid9678/xlink/internal/middleware"
 	"github.com/mohdrashid9678/xlink/internal/models"
 	"github.com/mohdrashid9678/xlink/internal/service"
 )
 
 type URLHandler struct {
-	service service.URLService
+	service   service.URLService
+	extractor analytics.Extractor
+	producer  analytics.StreamProducer
 }
 
-func NewURLHandler(service service.URLService) *URLHandler {
-	return &URLHandler{service: service}
+func NewURLHandler(service service.URLService, extractor analytics.Extractor, producer analytics.StreamProducer) *URLHandler {
+	return &URLHandler{
+		service:   service,
+		extractor: extractor,
+		producer:  producer,
+	}
 }
 
 func (h *URLHandler) Create(c *gin.Context) {
@@ -61,7 +69,13 @@ func (h *URLHandler) Redirect(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusFound, url.LongURL)
-	// h.trackClickAsync(shortCode)
+
+	if h.producer != nil && h.extractor != nil {
+		event := h.extractor.Extract(c.Request, url.ID, shortCode)
+		go func() {
+			_ = h.producer.PublishClick(context.Background(), event)
+		}()
+	}
 }
 
 func (h *URLHandler) Update(c *gin.Context) {

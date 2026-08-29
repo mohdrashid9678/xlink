@@ -59,7 +59,7 @@ func TestRedirectReturnsFoundWithLocationHeader(t *testing.T) {
 				LongURL:   "https://example.com/docs",
 			}, nil
 		},
-	})
+	}, nil, nil)
 
 	router := gin.New()
 	router.GET("/:shortCode", handler.Redirect)
@@ -82,7 +82,7 @@ func TestGetDoesNotTrackClick(t *testing.T) {
 		get: func(_ context.Context, _ uuid.UUID, shortCode string) (*models.URL, error) {
 			return &models.URL{ID: uuid.New(), ShortCode: shortCode}, nil
 		},
-	})
+	}, nil, nil)
 
 	router := gin.New()
 	router.GET("/api/v1/urls/:shortCode", func(c *gin.Context) {

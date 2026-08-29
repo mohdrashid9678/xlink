@@ -11,6 +11,7 @@ func RegisterRoutes(
 	urlHandler *handlers.URLHandler,
 	authHandler *handlers.AuthHandler,
 	healthHandler *handlers.HealthHandler,
+	analyticsHandler *handlers.AnalyticsHandler,
 	authMiddleware gin.HandlerFunc,
 ) {
 	// Prometheus metrics scrape endpoint
@@ -23,7 +24,7 @@ func RegisterRoutes(
 		router.GET("/readyz", healthHandler.Readyz)
 	}
 
-	// Public short links are separate from the versioned management API.
+	// Public short links
 	router.GET("/:shortCode", urlHandler.Redirect)
 	router.GET("/static/redirect", func(c *gin.Context) {
 		c.Redirect(302, "https://google.com")
@@ -46,4 +47,8 @@ func RegisterRoutes(
 	urls.GET("/:shortCode", urlHandler.Get)
 	urls.PATCH("/:shortCode", urlHandler.Update)
 	urls.DELETE("/:shortCode", urlHandler.Delete)
+
+	if analyticsHandler != nil {
+		urls.GET("/:shortCode/analytics", analyticsHandler.GetAnalytics)
+	}
 }
