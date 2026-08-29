@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: xlink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: xLinkAdmin9678
+      POSTGRES_DB: xlink
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d xlink"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: xlink-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: xlink-jaeger
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xlink-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+      SERVER_BASE_URL: http://localhost:8080
+      DB_URL: postgres://postgres:xLinkAdmin9678@postgres:5432/xlink?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      AUTO_MIGRATE: "true"
+      AUTH_JWT_SECRET: your-local-secret-key-at-least-32-chars-long
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      CACHE_L1_MAX_COST_MB: 256
+      CACHE_L1_NUM_COUNTERS: 1000000
+      PPROF_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      OTEL_SERVICE_NAME: xlink-api
+      OTEL_ENVIRONMENT: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
