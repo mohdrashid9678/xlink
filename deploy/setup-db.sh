@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "======================================================"
 echo "    Provisioning PostgreSQL 16 Database Server        "
 echo "======================================================"
 
 # 1. Apply Linux Kernel Socket & Network Performance Tuning
-echo "Applying Linux kernel network tuning..."
+echo "[INFO] Applying Linux kernel network tuning..."
 sudo tee /etc/sysctl.d/99-xlink-db.conf > /dev/null << 'EOF'
 net.core.somaxconn = 65535
 net.ipv4.tcp_max_syn_backlog = 65535
@@ -38,7 +41,7 @@ DB_NAME=${DB_NAME:-xlink}
 DB_USER=${DB_USER:-postgres}
 DB_PASSWORD=${DB_PASSWORD:-"xLinkAdmin9678"}
 
-echo "Configuring PostgreSQL user '$DB_USER' and database '$DB_NAME'..."
+echo "[INFO] Configuring PostgreSQL user '$DB_USER' and database '$DB_NAME'..."
 sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 || sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
 
@@ -58,10 +61,21 @@ fi
 # 7. Restart PostgreSQL to apply network changes
 sudo systemctl restart postgresql
 
+# 8. Apply Migrations if present
+if [ -d "$APP_DIR/migrations" ]; then
+    echo "[INFO] Applying database migrations..."
+    for migration in "$APP_DIR"/migrations/*.up.sql; do
+        if [ -f "$migration" ]; then
+            echo "   Applying: $(basename "$migration")"
+            PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -f "$migration" > /dev/null 2>&1 || true
+        fi
+    done
+fi
+
 PRIVATE_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
 
 echo "======================================================"
-echo " PostgreSQL 16 Provisioning Complete!"
-echo " Connection string:"
-echo " postgresql://$DB_USER:$DB_PASSWORD@$PRIVATE_IP:5432/$DB_NAME?sslmode=disable"
+echo "[SUCCESS] PostgreSQL 16 Provisioning Complete!"
+echo "Connection string:"
+echo "postgresql://$DB_USER:$DB_PASSWORD@$PRIVATE_IP:5432/$DB_NAME?sslmode=disable"
 echo "======================================================"

@@ -6,7 +6,7 @@ echo "         Provisioning Redis 7 Cache Server            "
 echo "======================================================"
 
 # 1. Apply Linux Kernel Socket & Network Performance Tuning
-echo "Applying Linux kernel network tuning..."
+echo "[INFO] Applying Linux kernel network tuning..."
 sudo tee /etc/sysctl.d/99-xlink-redis.conf > /dev/null << 'EOF'
 net.core.somaxconn = 65535
 net.ipv4.tcp_max_syn_backlog = 65535
@@ -48,7 +48,7 @@ sudo systemctl restart redis-server
 PRIVATE_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
 
 echo "======================================================"
-echo " ✅ Redis 7 Provisioning Complete!"
-echo " Connection string:"
-echo " redis://$PRIVATE_IP:6379/0"
+echo "[SUCCESS] Redis 7 Provisioning Complete!"
+echo "Connection string:"
+echo "redis://$PRIVATE_IP:6379/0"
 echo "======================================================"
