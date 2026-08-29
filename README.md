@@ -1,8 +1,10 @@
 # xlink
 
-A fast, effcient and scalable URL shortener written in Go.
+A fast, efficient and scalable URL shortener written in Go.
 
----
+## Architecture
+
+![xlink architecture](assets/xlink-architecture.png)
 
 ## Features
 
@@ -13,35 +15,17 @@ A fast, effcient and scalable URL shortener written in Go.
 - **Observability**: Prometheus metrics (`/metrics`), OpenTelemetry tracing (Jaeger), and `/livez` and `/readyz` health endpoints.
 - **Authentication**: JWT access and refresh token management with secure hashing.
 
----
+## Performance
 
-## Architecture Overview
+Tested on 3× c6g.large instances behind an AWS ALB with kernel and Nginx tuning applied.
 
-```
-                      Incoming Requests
-                             │
-              ┌──────────────▼──────────────┐
-              │    Nginx / Load Balancer    │
-              └──────────────┬──────────────┘
-                             │
-              ┌──────────────▼──────────────┐
-              │       xlink Go API          │
-              └──────┬───────────────┬──────┘
-                     │               │
-       (Cache Lookup)│               │(Async Stream Publish)
-                     ▼               ▼
- ┌─────────────────────────┐   ┌─────────────────────────┐
- │   Multi-Tier Cache      │   │   Redis Streams Buffer  │
- │ 1. L1 TinyLFU (Memory)  │   │  `xlink:events:clicks`  │
- │ 2. L2 Redis (Network)   │   └─────────────┬───────────┘
- │ 3. SingleFlight Query   │                 │
- └───────────┬─────────────┘                 │ (Batch Insert)
-             │                               ▼
-             │ (On Cache Miss) ┌─────────────────────────┐
-             └────────────────►│      PostgreSQL 16      │
-                               │ (URLs & Clicks Storage) │
-                               └─────────────────────────┘
-```
+| Metric | Value |
+| :--- | :--- |
+| Sustained Throughput | 50,000+ req/s |
+| p50 Redirect Latency | ~1–2ms |
+| p95 Redirect Latency | <10ms |
+| p99 Redirect Latency | <50ms |
+| Direct Cache Hit | sub-millisecond |
 
 ---
 
@@ -97,10 +81,8 @@ docker compose up -d --build
 
 - **API**: `http://localhost:8080`
 - **Jaeger UI**: `http://localhost:16686`
-- **Prometheus Metrics**: `http://localhost:8080/metrics`
+- **Metrics**: `http://localhost:8080/metrics`
 - **Health Check**: `http://localhost:8080/readyz`
-
----
 
 ### Running Directly on Host
 
