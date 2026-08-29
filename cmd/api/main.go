@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mohdrashid9678/xlink/internal/analytics"
 	"github.com/mohdrashid9678/xlink/internal/auth"
 	"github.com/mohdrashid9678/xlink/internal/cache"
 	"github.com/mohdrashid9678/xlink/internal/database"
@@ -79,14 +80,31 @@ func run(ctx context.Context) error {
 	urlRepository := repository.NewPostgresURLRepository(db.Pool)
 	userRepository := repository.NewPostgresUserRepository(db.Pool)
 	refreshTokenRepository := repository.NewPostgresRefreshTokenRepository(db.Pool)
+	analyticsRepository := repository.NewPostgresAnalyticsRepository(db.Pool)
+
+	// Initialize Analytics Pipeline
+	extractor := analytics.NewExtractor()
+	var producer analytics.StreamProducer = analytics.NewNoopProducer()
+	if redisClient != nil {
+		rawRedis := redisClient.Raw()
+		producer = analytics.NewRedisStreamProducer(rawRedis)
+		consumer := analytics.NewStreamConsumer(rawRedis, analyticsRepository, appLogger, analytics.ConsumerConfig{})
+		if err := consumer.Start(ctx); err != nil {
+			appLogger.Warn("failed to start analytics stream consumer", slog.Any("error", err))
+		} else {
+			defer consumer.Stop()
+		}
+	}
 
 	jwtManager := auth.NewJWTManager(cfg.JWTSigningKey)
 	urlService := service.NewURLService(urlRepository, urlCache)
 	authService := service.NewAuthService(userRepository, refreshTokenRepository, jwtManager)
+	analyticsService := service.NewAnalyticsService(urlRepository, analyticsRepository)
 
-	urlHandler := handlers.NewURLHandler(urlService)
+	urlHandler := handlers.NewURLHandler(urlService, extractor, producer)
 	authHandler := handlers.NewAuthHandler(authService)
 	healthHandler := handlers.NewHealthHandler(db.Pool, redisClient)
+	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
@@ -99,7 +117,7 @@ func run(ctx context.Context) error {
 		middleware.Recovery(appLogger),
 	)
 
-	routes.RegisterRoutes(router, urlHandler, authHandler, healthHandler, middleware.RequireAuth(jwtManager))
+	routes.RegisterRoutes(router, urlHandler, authHandler, healthHandler, analyticsHandler, middleware.RequireAuth(jwtManager))
 	if cfg.PProfEnabled {
 		routes.RegisterPProfRoutes(router)
 	}
